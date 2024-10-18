@@ -148,7 +148,7 @@ def generate_otp():
         log_info(f"End of generate_otp function for email={email}")
 
 
-# ---------------------------------------------- TRAIN TABLE -----------------------------------------------------------
+# ---------------------------------------------- RAILWAY USER TABLE ----------------------------------------------------
 
 @app.route('/register', methods=['POST'])
 @otp_required
