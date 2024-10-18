@@ -1,0 +1,1 @@
+VOICE_NOTIFICATIONS_ENABLED = False  # Default is on

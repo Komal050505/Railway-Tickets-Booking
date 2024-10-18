@@ -1,0 +1,44 @@
+-- Create the 'user' table
+CREATE TABLE "user" (
+    user_id SERIAL PRIMARY KEY,
+    username VARCHAR(80) UNIQUE NOT NULL,
+    password VARCHAR(128) NOT NULL,
+    email VARCHAR(120) UNIQUE NOT NULL
+);
+
+ALTER TABLE "user" RENAME TO railway_user;
+
+select * from railway_user
+
+
+
+
+
+
+
+-- Create the 'train' table
+CREATE TABLE train (
+    train_id SERIAL PRIMARY KEY,
+    train_name VARCHAR(120) NOT NULL,
+    source VARCHAR(120) NOT NULL,
+    destination VARCHAR(120) NOT NULL,
+    departure_time VARCHAR(50) NOT NULL,
+    arrival_time VARCHAR(50) NOT NULL,
+    available_seats INTEGER NOT NULL
+);
+
+select * from train
+
+
+
+
+-- Create the 'booking' table
+CREATE TABLE booking (
+    booking_id INTEGER PRIMARY KEY ,
+    user_id INTEGER NOT NULL,
+    train_id INTEGER NOT NULL,
+    seats_booked INTEGER NOT NULL,
+    FOREIGN KEY (user_id) REFERENCES railway_user(user_id) ON DELETE CASCADE,
+    FOREIGN KEY (train_id) REFERENCES train(train_id) ON DELETE CASCADE
+);
+select * from booking
