@@ -5,16 +5,18 @@ from urllib import request
 from flask import Flask, jsonify, request, session
 from datetime import datetime
 import pytz
+
 from sqlalchemy.exc import SQLAlchemyError
 
 from App.email_configurations import RECEIVER_EMAIL
-from App.email_operations import notify_failure, send_email, notify_success, send_email_notification, send_email_otp
+from App.email_operations import notify_failure, send_email, notify_success, send_email_notification, send_email_otp, \
+    generate_train_email_body, fetch_train_email_body, construct_train_email_body, prepare_and_send_email
 from Db_connections.configurations import session
 from Logging_package.logging_utility import log_info, log_debug, log_warning, log_error
 from Models.tables import Booking, Train, Railway_User, OTPStore
 import pyttsx3
 import threading
-from Utils.reusables import speak, otp_required
+from Utils.reusables import speak, otp_required, generate_train_search_results, validate_time_format
 import requests
 import psutil
 import random
@@ -89,12 +91,14 @@ def check_api_performance():
         return jsonify(performance_metrics), 200
 
     except requests.exceptions.RequestException as e:
+        session.rollback()
         error_message = f"Failed to call the target API: {str(e)}"
         log_error(error_message)
         send_email(RECEIVER_EMAIL, "API Performance Check Failed", error_message)
         return jsonify({"error": error_message}), 500
 
     except Exception as e:
+        session.rollback()
         error_message = f"An error occurred: {str(e)}"
         log_error(error_message)
         send_email(RECEIVER_EMAIL, "API Performance Check Error", error_message)
@@ -332,6 +336,7 @@ def get_users():
         }, 200
 
     except Exception as err:
+        session.rollback()
         error_message = f"An error occurred while fetching users: {str(err)}"
         log_error(error_message)
         speak(error_message)
@@ -524,7 +529,478 @@ def delete_user():
 
 # ---------------------------------------------- TRAIN TABLE -----------------------------------------------------------
 # Train Creation API
+@app.route('/trains', methods=['POST'])
+@otp_required
+def add_train():
+    """
+    Add a new train record to the database.
 
+    Sends an email notification upon success or failure.
+    Provides voice notifications for both success and errors.
+    """
+    log_info("Starting the process of adding a new train.")
+
+    try:
+        data = request.get_json()
+        log_debug(f"Received data for new train: {data}")
+
+        # Extract fields from the received data
+        train_name = data.get('train_name')
+        train_number = data.get('train_number')
+        source = data.get('source')
+        destination = data.get('destination')
+        departure_time = data.get('departure_time')
+        arrival_time = data.get('arrival_time')
+        available_seats = data.get('available_seats')
+        total_seats = data.get('total_seats')
+
+        # Validate the input fields
+        missing_fields = []
+        if not train_name:
+            missing_fields.append("train_name")
+        if not train_number:
+            missing_fields.append("train_number")
+        if not source:
+            missing_fields.append("source")
+        if not destination:
+            missing_fields.append("destination")
+        if not departure_time:
+            missing_fields.append("departure_time")
+        if not arrival_time:
+            missing_fields.append("arrival_time")
+        if available_seats is None:
+            missing_fields.append("available_seats")
+        if total_seats is None:
+            missing_fields.append("total_seats")
+
+        if missing_fields:
+            error_message = f"Missing or invalid input data: {', '.join(missing_fields)}."
+            log_error(error_message)
+            notify_failure("Add Train Failed", error_message)
+            threading.Thread(target=speak, args=(f"Error: {error_message}",)).start()
+            return jsonify({"message": error_message}), 400
+
+        # Check for duplicate train_number
+        existing_train = session.query(Train).filter_by(train_number=train_number).first()
+        if existing_train:
+            error_message = f"Train with number '{train_number}' already exists."
+            log_error(error_message)
+            notify_failure("Add Train Failed", error_message)
+            threading.Thread(target=speak, args=(f"Error: {error_message}",)).start()
+            return jsonify({"message": error_message}), 400
+
+        # Create a new train instance
+        new_train = Train(
+            train_name=train_name,
+            train_number=train_number,
+            source=source,
+            destination=destination,
+            departure_time=departure_time,
+            arrival_time=arrival_time,
+            available_seats=available_seats,
+            total_seats=total_seats  # Assign total_seats
+        )
+
+        session.add(new_train)
+        session.commit()
+
+        ist = pytz.timezone('Asia/Kolkata')
+        creation_time = datetime.now(ist).strftime("%Y-%m-%d %H:%M:%S %Z")
+
+        log_info(f"Train '{train_name}' added successfully at {creation_time}.")
+
+        # Notify success
+        notify_success("Train Added Successfully",
+                       f"Train '{train_name}' (Train Number: {train_number}) has been successfully added with the following details:\n"
+                       f"Source: {source}\nDestination: {destination}\nDeparture Time: {departure_time}\n"
+                       f"Arrival Time: {arrival_time}\nAvailable Seats: {available_seats}\n"
+                       f"Total Seats: {total_seats}\nAdded at: {creation_time} (IST)")
+
+        email_body = generate_train_email_body(train_name, train_number, source, destination, departure_time,
+                                               arrival_time, available_seats, total_seats,
+                                               creation_time)  # Include total_seats in email
+
+        send_email(
+            RECEIVER_EMAIL,
+            "New Train Added",
+            email_body
+        )
+
+        threading.Thread(target=speak, args=(f"Train {train_name} has been successfully added.",)).start()
+
+        return jsonify({
+            "message": "Train added successfully.",
+            "train": new_train.to_dict(),
+            "creation_time": creation_time
+        }), 201
+
+    except SQLAlchemyError as e:
+        session.rollback()
+        error_message = f"Error adding train: {str(e)}"
+        log_error(error_message)
+        notify_failure("Add Train Failed", error_message)
+        threading.Thread(target=speak, args=(f"Error: {error_message}",)).start()
+        return jsonify({"message": "Error adding train."}), 500
+
+    except Exception as err:
+        session.rollback()
+        error_message = f"An unexpected error occurred: {str(err)}"
+        log_error(error_message)
+        notify_failure("Add Train Failed", error_message)
+        threading.Thread(target=speak, args=(f"Error: {error_message}",)).start()
+        return jsonify({"message": error_message}), 500
+
+    finally:
+        session.close()
+        log_info("Finished the process of adding a new train.")
+
+
+@app.route('/trains', methods=['GET'])
+def fetch_trains():
+    """
+    Fetch train records based on search criteria.
+
+    Supports case-insensitive search for train name, train number,
+    source, destination, and other conditions.
+    """
+    log_info("Starting the process of fetching train records.")
+
+    try:
+        train_id = request.args.get('train_id')
+        train_name = request.args.get('train_name')
+        train_number = request.args.get('train_number')
+        source = request.args.get('source')
+        destination = request.args.get('destination')
+
+        log_debug(
+            f"Received search criteria: train_id={train_id}, train_name={train_name}, train_number={train_number}, source={source}, destination={destination}")
+
+        query = session.query(Train)
+
+        if train_id:
+
+            try:
+                train_id = int(train_id)
+                query = query.filter(Train.train_id == train_id)
+            except ValueError:
+                log_error(f"Invalid train_id format: {train_id}")
+                return jsonify({"message": "Invalid train_id format."}), 400
+        if train_name:
+            query = query.filter(Train.train_name.ilike(f'%{train_name}%'))
+        if train_number:
+            query = query.filter(Train.train_number.ilike(f'%{train_number}%'))
+        if source:
+            query = query.filter(Train.source.ilike(f'%{source}%'))
+        if destination:
+            query = query.filter(Train.destination.ilike(f'%{destination}%'))
+
+        train_records = query.all()
+
+        total_count = len(train_records)
+
+        if total_count == 0:
+            log_info("No train records found matching the criteria.")
+            return jsonify({"message": "No train records found."}), 404
+
+        results = generate_train_search_results(train_records)
+
+        log_info(f"Found {total_count} train records matching the criteria.")
+
+        email_body = fetch_train_email_body(results, total_count)
+        send_email(
+            RECEIVER_EMAIL,
+            "Train Records Fetched",
+            email_body
+        )
+
+        return jsonify(
+            {"message": "Train records fetched successfully.", "trains": results, "total_count": total_count}), 200
+
+    except SQLAlchemyError as e:
+        session.rollback()
+        error_message = f"Database error while fetching trains: {str(e)}"
+        log_error(error_message)
+        return jsonify({"message": "Error fetching train records."}), 500
+
+    except Exception as err:
+        session.rollback()
+        error_message = f"An unexpected error occurred: {str(err)}"
+        log_error(error_message)
+        return jsonify({"message": error_message}), 500
+
+    finally:
+        session.close()
+        log_info("Finished the process of fetching train records.")
+
+
+@app.route('/trains', methods=['PUT'])
+@otp_required
+def update_train():
+    """
+    Update the details of an existing train record in the database.
+
+    Sends an email notification upon success or failure.
+    Provides voice notifications for both success and errors.
+    """
+    log_info("Starting the process of updating train.")
+
+    try:
+        data = request.get_json()
+        log_debug(f"Received data for updating train: {data}")
+
+        train_number = data.get('train_number')
+        train_name = data.get('train_name')
+        source = data.get('source')
+        destination = data.get('destination')
+        departure_time = data.get('departure_time')
+        arrival_time = data.get('arrival_time')
+        total_seats = data.get('total_seats')
+        available_seats = data.get('available_seats')
+
+        train_to_update = session.query(Train).filter(Train.train_number == train_number).first()
+
+        if not train_to_update:
+            error_message = f"Train with number '{train_number}' not found."
+            log_error(error_message)
+            notify_failure("Update Train Failed", error_message)
+            threading.Thread(target=speak, args=(f"Error: {error_message}",)).start()
+            return jsonify({"message": error_message}), 404
+
+        error_messages = []
+
+        if available_seats is not None:
+            if not isinstance(available_seats, int) or available_seats < 0:
+                error_messages.append("Available seats must be a non-negative integer.")
+
+        if total_seats is not None:
+            if not isinstance(total_seats, int) or total_seats <= 0:
+                error_messages.append("Total seats must be a positive integer.")
+            elif total_seats < available_seats:
+                error_messages.append("Available seats cannot exceed total seats.")
+
+        if departure_time and not validate_time_format(departure_time):
+            error_messages.append("Invalid departure time format. Expected format is HH:MM.")
+
+        if arrival_time and not validate_time_format(arrival_time):
+            error_messages.append("Invalid arrival time format. Expected format is HH:MM.")
+
+        if error_messages:
+            error_message = "Validation failed: " + "; ".join(error_messages)
+            log_error(error_message)
+            notify_failure("Update Train Failed", error_message)
+            threading.Thread(target=speak, args=(f"Error: {error_message}",)).start()
+            return jsonify({"message": error_message}), 400
+
+        if train_name:
+            train_to_update.train_name = train_name
+        if source:
+            train_to_update.source = source
+        if destination:
+            train_to_update.destination = destination
+        if departure_time:
+            train_to_update.departure_time = departure_time
+        if arrival_time:
+            train_to_update.arrival_time = arrival_time
+        if total_seats is not None:
+            train_to_update.total_seats = total_seats
+        if available_seats is not None:
+            train_to_update.available_seats = available_seats
+
+        session.commit()
+
+        ist = pytz.timezone('Asia/Kolkata')
+        update_time = datetime.now(ist).strftime("%Y-%m-%d %H:%M:%S %Z")
+
+        log_info(f"Train '{train_number}' updated successfully at {update_time}.")
+
+        notify_success("Train Updated Successfully",
+                       f"Train '{train_number}' has been successfully updated with the following details:\n"
+                       f"Name: {train_to_update.train_name}\nSource: {train_to_update.source}\n"
+                       f"Destination: {train_to_update.destination}\nDeparture Time: {train_to_update.departure_time}\n"
+                       f"Arrival Time: {train_to_update.arrival_time}\nTotal Seats: {train_to_update.total_seats}\n"
+                       f"Available Seats: {train_to_update.available_seats}\n"
+                       f"Updated at: {update_time} (IST)")
+
+        email_body = construct_train_email_body(
+            train_to_update.train_name,
+            train_number,
+            train_to_update.source,
+            train_to_update.destination,
+            train_to_update.departure_time,
+            train_to_update.arrival_time,
+            train_to_update.total_seats,
+            train_to_update.available_seats,
+            train_to_update.waiting_list_count,
+            update_time
+        )
+
+        send_email(
+            RECEIVER_EMAIL,
+            "Train Updated",
+            email_body
+        )
+
+        threading.Thread(target=speak, args=(f"Train {train_number} has been successfully updated.",)).start()
+
+        return jsonify({
+            "message": "Train updated successfully.",
+            "train": train_to_update.to_dict(),
+            "update_time": update_time
+        }), 200
+
+    except SQLAlchemyError as e:
+        session.rollback()
+        error_message = f"Error updating train: {str(e)}"
+        log_error(error_message)
+        notify_failure("Update Train Failed", error_message)
+        threading.Thread(target=speak, args=(f"Error: {error_message}",)).start()
+        return jsonify({"message": "Error updating train."}), 500
+
+    except Exception as err:
+        session.rollback()
+        error_message = f"An unexpected error occurred: {str(err)}"
+        log_error(error_message)
+        notify_failure("Update Train Failed", error_message)
+        threading.Thread(target=speak, args=(f"Error: {error_message}",)).start()
+        return jsonify({"message": error_message}), 500
+
+    finally:
+        session.close()
+        log_info("Finished the process of updating the train.")
+
+
+@app.route('/trains', methods=['DELETE'])
+@otp_required  # Keep the existing OTP validation
+def delete_trains():
+    """Deletes a train based on the provided query parameters (train_id, train_name, or train_number)."""
+    try:
+        log_info(f"Received DELETE request with args: {request.args}")
+
+        train_id = request.args.get('train_id')
+        train_name = request.args.get('train_name')
+        train_number = request.args.get('train_number')
+
+        email = request.args.get('email')
+        otp = request.args.get('otp')
+
+        log_info(f"Email: {email}, OTP: {otp}")
+
+        if not email or not otp:
+            log_error("Email and OTP must be provided as query parameters.")
+            return jsonify({"error": "Email and OTP must be provided."}), 400
+
+        if not (train_id or train_name or train_number):
+            log_error("At least one of 'train_id', 'train_name', or 'train_number' must be provided.")
+            return jsonify({"error": "At least one of 'train_id', 'train_name', or 'train_number' must be provided."}), 400
+
+        deleted_train_name = None
+
+        train = None
+        if train_id:
+            train = session.query(Train).filter_by(train_id=int(train_id)).first()
+        elif train_name:
+            train = session.query(Train).filter_by(train_name=train_name).first()
+        elif train_number:
+            train = session.query(Train).filter_by(train_number=train_number).first()
+
+        if train:
+            deleted_train_name = train.train_name
+            session.delete(train)
+            log_info(f"Deleted train: {deleted_train_name}.")
+        else:
+            log_error("No train found to delete with provided parameters.")
+            return jsonify({"error": "No train found to delete."}), 404
+
+        session.commit()
+
+        current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        log_info(f"Successfully deleted train: {deleted_train_name} at {current_time}")
+
+        voice_message = f"Successfully deleted the train: {deleted_train_name} at {current_time}."
+
+        threading.Thread(target=speak, args=(voice_message,)).start()
+
+        prepare_and_send_email(action="deletion", train_details=[deleted_train_name], operation_time=current_time,
+                               email=email)
+
+        return jsonify(
+            {"message": f"Successfully deleted train: {deleted_train_name}", "time_of_deletion": current_time}), 200
+
+    except SQLAlchemyError as db_error:
+        session.rollback()
+        log_error(f"Database error during train deletion: {db_error}")
+        return jsonify({"error": "Internal server error", "details": str(db_error)}), 500
+
+    except Exception as e:
+        session.rollback()
+        log_error(f"Unexpected error during train deletion: {e}")
+        return jsonify({"error": "Internal server error", "details": str(e)}), 500
+
+    finally:
+        session.close()
+        log_info("Finished the process of Deleting Train")
+
+# ---------------------------------------------- TRAIN TABLE -----------------------------------------------------------
+'''
+@app.route('/bookings', methods=['POST'])
+@otp_required  # Apply the OTP decorator to the endpoint
+def create_booking():
+    """Create a new booking."""
+
+    try:
+        data = request.get_json()
+
+        # Log the incoming request data
+        log_info(f"Received data for booking: {data}")
+
+        # Validate input data
+        validation_error = validate_booking_data(data)
+        if validation_error:
+            log_error(f"Validation Error: {validation_error}")
+            return jsonify({"error": validation_error}), 400
+
+        # Record the time of booking
+        booking_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+        # Create a new booking instance
+        new_booking = Booking(
+            user_id=data['user_id'],
+            train_id=data['train_id'],
+            seats_booked=data['seats_booked']
+        )
+
+        # Add and commit the new booking to the database
+        session.add(new_booking)
+        session.commit()
+
+        # Log the successful booking creation
+        log_info(f"Created booking: {new_booking.booking_id} at {booking_time}")
+
+        # Send the email notification using the new function
+        send_booking_confirmation_email(
+            recipient=data['email'],
+            booking_id=new_booking.booking_id,
+            user_id=new_booking.user_id,
+            train_id=new_booking.train_id,
+            seats_booked=new_booking.seats_booked,
+            booking_time=booking_time
+        )
+
+        # Return the booking details as JSON
+        return jsonify(new_booking.to_dict()), 201
+
+    except SQLAlchemyError as db_error:
+        session.rollback()
+        log_error(f"Database error during booking creation: {db_error}")
+        return jsonify({"error": "Database error", "details": str(db_error)}), 500
+
+    except Exception as e:
+        log_error(f"Unexpected error during booking creation: {e}")
+        return jsonify({"error": "Internal server error", "details": str(e)}), 500
+
+    finally:
+        session.close()  # Ensure the session is closed regardless of success or failure
+'''
 
 if __name__ == "__main__":
     app.run(debug=True)

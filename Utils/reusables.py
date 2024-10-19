@@ -1,4 +1,5 @@
 import threading
+import time
 from datetime import datetime, timedelta
 from functools import wraps
 
@@ -6,7 +7,6 @@ import pyttsx3  # Correctly import pyttsx3
 from flask import jsonify, request
 from sqlalchemy.exc import SQLAlchemyError
 
-from App.constants import VOICE_NOTIFICATIONS_ENABLED
 from Db_connections.configurations import session
 from Logging_package.logging_utility import log_error, log_info
 from Models.tables import OTPStore
@@ -38,7 +38,7 @@ def otp_required(func):
     @wraps(func)
     def wrapper(*args, **kwargs):
         payload = request.get_json()
-
+        email = None
         try:
             if not payload or 'email' not in payload or 'otp' not in payload:
                 log_error("OTP validation failed: Email and OTP are required.")
@@ -78,3 +78,50 @@ def otp_required(func):
             session.close()
 
     return wrapper
+
+
+def generate_train_search_results(train_records):
+    """
+    Convert a list of train records into a dictionary format for JSON response.
+
+    Args:
+        train_records (list): List of Train objects.
+
+    Returns:
+        list: List of dictionaries containing train details.
+    """
+    results = []
+    for train in train_records:
+        result = {
+            "train_id": train.train_id,
+            "train_name": train.train_name,
+            "train_number": train.train_number,
+            "source": train.source,
+            "destination": train.destination,
+            "departure_time": train.departure_time,
+            "arrival_time": train.arrival_time,
+            "total_seats": getattr(train, 'total_seats', None),  # Using getattr for safety
+            "available_seats": getattr(train, 'available_seats', None),
+            "waiting_list_count": getattr(train, 'waiting_list_count', 0)
+        }
+        results.append(result)
+    return results
+
+
+
+def validate_time_format(time_str):
+    """
+    Validate the time format (HH:MM) for departure and arrival times.
+
+    Args:
+        time_str (str): Time string to validate.
+
+    Returns:
+        bool: True if valid, False otherwise.
+    """
+    try:
+        time.strptime(time_str, "%H:%M")
+        return True
+    except ValueError:
+        return False
+
