@@ -5,13 +5,8 @@
   </component>
   <component name="ChangeListManager">
     <list default="true" id="2803ff16-b66e-4ea2-b027-6ca7b9432b6f" name="Changes" comment="">
+      <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/App/app.py" beforeDir="false" afterPath="$PROJECT_DIR$/App/app.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/App/constants.py" beforeDir="false" afterPath="$PROJECT_DIR$/App/constants.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/App/email_configurations.py" beforeDir="false" afterPath="$PROJECT_DIR$/App/email_configurations.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/App/email_operations.py" beforeDir="false" afterPath="$PROJECT_DIR$/App/email_operations.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/App/main.log" beforeDir="false" afterPath="$PROJECT_DIR$/App/main.log" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/Models/tables.py" beforeDir="false" afterPath="$PROJECT_DIR$/Models/tables.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/Utils/reusables.py" beforeDir="false" afterPath="$PROJECT_DIR$/Utils/reusables.py" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -37,14 +32,14 @@
     <option name="hideEmptyMiddlePackages" value="true" />
     <option name="showLibraryContents" value="true" />
   </component>
-  <component name="PropertiesComponent"><![CDATA[{
-  "keyToString": {
-    "Python.app.executor": "Run",
-    "Python.logging_utility.executor": "Run",
-    "Python.tables.executor": "Run",
-    "RunOnceActivity.ShowReadmeOnStart": "true"
+  <component name="PropertiesComponent">{
+  &quot;keyToString&quot;: {
+    &quot;Python.app.executor&quot;: &quot;Run&quot;,
+    &quot;Python.logging_utility.executor&quot;: &quot;Run&quot;,
+    &quot;Python.tables.executor&quot;: &quot;Run&quot;,
+    &quot;RunOnceActivity.ShowReadmeOnStart&quot;: &quot;true&quot;
   }
-}]]></component>
+}</component>
   <component name="SharedIndexes">
     <attachedChunks>
       <set>

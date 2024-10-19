@@ -106,10 +106,12 @@ class TrainRoute(Base):
     route_id = Column(Integer, primary_key=True, autoincrement=True)
     train_number = Column(String(50), ForeignKey('train.train_number'),
                           nullable=False)  # Foreign key reference to train number
-    train_name = Column(String(100), nullable=False)  # Train name for easy reference
-    station_name = Column(String(100), nullable=False)  # City name or station name
-    arrival_time = Column(Time, nullable=False)  # Arrival time at the station
-    departure_time = Column(Time, nullable=False)  # Departure time from the station
+    train_name = Column(String(100), nullable=False)
+    station_name = Column(String(100), nullable=False)
+    arrival_time = Column(Time, nullable=False)
+    departure_time = Column(Time, nullable=False)
+    origin = Column(String(255), nullable=False)
+    destination = Column(String(255), nullable=False)
 
     # Define a relationship to the Train table if needed
     train = relationship("Train", back_populates="routes")
@@ -122,7 +124,9 @@ class TrainRoute(Base):
             "train_name": self.train_name,
             "station_name": self.station_name,
             "arrival_time": str(self.arrival_time),
-            "departure_time": str(self.departure_time)
+            "departure_time": str(self.departure_time),
+            "origin": self.origin,
+            "destination": self.destination
         }
 
 
@@ -136,11 +140,11 @@ class Booking(Base):
     user_id = Column(Integer, ForeignKey('railway_user.user_id'), nullable=False)
     train_id = Column(Integer, ForeignKey('train.train_id'), nullable=False)
     seats_booked = Column(Integer, nullable=False)
-    seat_preference = Column(SEAT_PREFERENCE, nullable=True)  # Add seat preference field
-    booking_date = Column(Date, nullable=False)  # Date of ticket booking
-    travel_date = Column(Date, nullable=False)  # Date for which the ticket is booked
-    status = Column(String(50), default='Confirmed')  # To track booking status
-    source = Column(String(100), nullable=False)  # Source location
+    seat_preference = Column(SEAT_PREFERENCE, nullable=True)
+    booking_date = Column(Date, nullable=False)
+    travel_date = Column(Date, nullable=False)
+    status = Column(String(50), default='Confirmed')
+    source = Column(String(100), nullable=False)
     destination = Column(String(100), nullable=False)
 
     # Establish relationships

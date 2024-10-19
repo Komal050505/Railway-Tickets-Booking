@@ -54,7 +54,7 @@ def otp_required(func):
                 return jsonify({"error": "No OTP generated for this email."}), 400
 
             # Check if OTP is expired (valid for 5 minutes)
-            if datetime.now() - otp_record.timestamp > timedelta(minutes=5):
+            if datetime.now() - otp_record.timestamp > timedelta(minutes=10):
                 log_error(f"OTP validation failed: OTP for {email} has expired.")
                 return jsonify({"error": "OTP has expired."}), 400
 

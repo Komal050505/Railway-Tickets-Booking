@@ -11,6 +11,7 @@ Functions:
 
 # Standard library imports (for sending emails)
 import smtplib
+from datetime import datetime
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 
@@ -54,7 +55,7 @@ def send_email(to_email, subject, body):
     """
     if not to_email or len(to_email) == 0:
         log_error("No recipient email provided.")
-        return False  # Indicate failure
+        return False
 
     msg = MIMEMultipart()
     msg['From'] = SENDER_EMAIL
@@ -69,7 +70,7 @@ def send_email(to_email, subject, body):
             server.login(SENDER_EMAIL, PASSWORD)
             server.sendmail(SENDER_EMAIL, to_email, msg.as_string())
             log_info(f"Email sent successfully to: {', '.join(to_email)} with subject: {subject}.")
-            return True  # Indicate success
+            return True
     except smtplib.SMTPException as smtp_err:
         log_error(f"SMTP error occurred: {str(smtp_err)}")
     except Exception as e:
@@ -125,13 +126,13 @@ def send_email_notification(message):
     try:
         if send_email([recipient_email], subject, message):
             log_info(f"Email notification sent to: {recipient_email} with subject: {subject}.")
-            return True  # Indicate success
+            return True
         else:
             log_error("Failed to send email notification.")
     except Exception as e:
         log_error(f"Error in sending email notification: {str(e)}")
 
-    return False  # Indicate failure
+    return False
 
 
 # email_operations.py
@@ -141,7 +142,7 @@ def generate_train_email_body(train_name, train_number, source, destination, dep
     """
     Generate the email body for the new train added notification.
     """
-    return (f"A new train has been added:\n"
+    return (f"Dear Team A new train has been added Successfully:\n"
             f"-----------------------------------\n"
             f"Train Name: {train_name}\n"
             f"Train Number: {train_number}\n"
@@ -153,7 +154,8 @@ def generate_train_email_body(train_name, train_number, source, destination, dep
             f"Total Seats: {total_seats}\n"
             f"Added at: {creation_time} (IST)\n"
             f"-----------------------------------\n"
-            f"Thank you for using our service!\n")
+            f"Best Regards,\n"
+            f"Train Management System")
 
 
 def fetch_train_email_body(train_records, total_count):
@@ -178,9 +180,9 @@ def fetch_train_email_body(train_records, total_count):
             f"Destination: {train['destination']}\n"
             f"Departure Time: {train['departure_time']}\n"
             f"Arrival Time: {train['arrival_time']}\n"
-            f"Total Seats: {train['total_seats']}\n"  # Added total_seats
+            f"Total Seats: {train['total_seats']}\n"  
             f"Available Seats: {train['available_seats']}\n"
-            f"Waiting List Count: {train['waiting_list_count']}\n"  # Added waiting list count
+            f"Waiting List Count: {train['waiting_list_count']}\n"  
             f"-----------------------------------\n"
         )
     return email_body
@@ -238,7 +240,6 @@ def prepare_and_send_email(action, train_details, operation_time, email):
     """
     email_subject = f"Train {action.capitalize()} Notification"
 
-    # Structure the email body content based on the trains affected
     email_body = f"""
     Dear Admin,
 
@@ -251,8 +252,6 @@ def prepare_and_send_email(action, train_details, operation_time, email):
     Best Regards,
     Train Management System
     """
-
-    # Send the email using the placeholder function
     send_email(to_email=[email], subject=email_subject, body=email_body)
 
 
@@ -271,5 +270,98 @@ def send_booking_confirmation_email(recipient, booking_id, user_id, train_id, se
         "Safe travels!\n"
     )
 
-    # Call the send_email function with the recipient as a list
     send_email(to_email=[recipient], subject=subject, body=body)
+
+
+def generate_route_email_body(train_name, train_number, station_name, arrival_time, departure_time, creation_time,
+                              origin, destination):
+    """
+    Generate the email body for the new train route added notification.
+
+    Parameters:
+    - train_name: The name of the train.
+    - train_number: The number of the train.
+    - station_name: The station where the route is added.
+    - arrival_time: The arrival time of the train at the station.
+    - departure_time: The departure time of the train from the station.
+    - creation_time: The time when the route was added.
+    - origin: The starting point of the train route.
+    - destination: The ending point of the train route.
+
+    Returns:
+    - str: Formatted email body.
+    """
+    return (f"Dear Team,\n\n"
+            f"A new train route has been added successfully:\n"
+            f"-----------------------------------\n"
+            f"Train Name: {train_name}\n"
+            f"Train Number: {train_number}\n"
+            f"Station Name: {station_name}\n"
+            f"Arrival Time: {arrival_time}\n"
+            f"Departure Time: {departure_time}\n"
+            f"Origin: {origin}\n"
+            f"Destination: {destination}\n"
+            f"Added at: {creation_time} (IST)\n"
+            f"-----------------------------------\n"
+            f"Best Regards,\n"
+            f"Train Management System")
+
+
+def generate_fetch_email_body(routes, creation_time, total_count):
+    """Generate the email body for fetched train routes."""
+    body = f"Train routes fetched at {creation_time}:\n"
+    body += f"Total Count: {total_count}\n\n"
+    for route in routes:
+        body += f"Dear Team,\n\n"
+        body += f"Fetched Train Details Successfully:\n"
+        body += f"-----------------------------------\n"
+        body += f"Route ID: {route.get('route_id', 'N/A')}\n"
+        body += f"Train Number: {route['train_number']}\n"
+        body += f"Train Name: {route['train_name']}\n"
+        body += f"Station Name: {route['station_name']}\n"
+        body += f"Arrival Time: {route['arrival_time']}\n"
+        body += f"Departure Time: {route['departure_time']}\n"
+        body += f"Origin: {route['origin']}\n"
+        body += f"Destination: {route['destination']}\n\n"
+        body += f"Best Regards,\n"
+        body += f"Train Management System"
+
+    return body
+
+
+def notify_deletion(train_number, station_name, deletion_status, email_time, formatted_deletion_time):
+    """
+    Generate the email body for the deletion of a train route and send the notification.
+
+    Parameters:
+    - train_number (str): The number of the train.
+    - station_name (str): The station name where the route is deleted.
+    - deletion_status (str): The status of the deletion ("success" or "error").
+    - email_time (datetime): The time when the email notification is sent.
+    - formatted_deletion_time (str): The time when the deletion occurred, formatted as a string.
+    """
+    # Format the email time
+    formatted_email_time = email_time.strftime("%Y-%m-%d %H:%M:%S")
+
+    # Construct the email body
+    email_body = (
+        f"Dear Team,\n\n"
+        f"The following train route deletion details:\n"
+        f"-----------------------------------\n"
+        f"Train Number: {train_number}\n"
+        f"Station Name: {station_name}\n"
+        f"Deleted at: {formatted_deletion_time} (IST)\n"  
+        f"Notification Sent at: {formatted_email_time} (IST)\n"  
+        f"Status: {'Deletion Successful' if deletion_status == 'success' else 'Deletion Failed'}\n"
+        f"-----------------------------------\n"
+        f"Best Regards,\n"
+        f"Train Management System"
+    )
+
+    subject = f"Train Route Deletion Status: {deletion_status.capitalize()}"
+
+    send_email(
+        to_email=ADMIN_EMAIL,
+        subject=subject,
+        body=email_body
+    )

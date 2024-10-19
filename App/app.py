@@ -8,12 +8,13 @@ import pytz
 
 from sqlalchemy.exc import SQLAlchemyError
 
-from App.email_configurations import RECEIVER_EMAIL
+from App.email_configurations import RECEIVER_EMAIL, ADMIN_EMAIL
 from App.email_operations import notify_failure, send_email, notify_success, send_email_notification, send_email_otp, \
-    generate_train_email_body, fetch_train_email_body, construct_train_email_body, prepare_and_send_email
+    generate_train_email_body, fetch_train_email_body, construct_train_email_body, prepare_and_send_email, \
+    generate_route_email_body, generate_fetch_email_body, notify_deletion
 from Db_connections.configurations import session
 from Logging_package.logging_utility import log_info, log_debug, log_warning, log_error
-from Models.tables import Booking, Train, Railway_User, OTPStore
+from Models.tables import Booking, Train, Railway_User, OTPStore, TrainRoute
 import pyttsx3
 import threading
 from Utils.reusables import speak, otp_required, generate_train_search_results, validate_time_format
@@ -870,7 +871,7 @@ def update_train():
 
 
 @app.route('/trains', methods=['DELETE'])
-@otp_required  # Keep the existing OTP validation
+@otp_required
 def delete_trains():
     """Deletes a train based on the provided query parameters (train_id, train_name, or train_number)."""
     try:
@@ -891,9 +892,10 @@ def delete_trains():
 
         if not (train_id or train_name or train_number):
             log_error("At least one of 'train_id', 'train_name', or 'train_number' must be provided.")
-            return jsonify({"error": "At least one of 'train_id', 'train_name', or 'train_number' must be provided."}), 400
+            return jsonify(
+                {"error": "At least one of 'train_id', 'train_name', or 'train_number' must be provided."}), 400
 
-        deleted_train_name = None
+        # deleted_train_name = None
 
         train = None
         if train_id:
@@ -940,67 +942,464 @@ def delete_trains():
         session.close()
         log_info("Finished the process of Deleting Train")
 
-# ---------------------------------------------- TRAIN TABLE -----------------------------------------------------------
-'''
-@app.route('/bookings', methods=['POST'])
-@otp_required  # Apply the OTP decorator to the endpoint
-def create_booking():
-    """Create a new booking."""
 
+# ---------------------------------------------- TRAIN ROUTE TABLE -----------------------------------------------------
+
+@app.route('/add-train-route', methods=['POST'])
+@otp_required
+def add_train_route():
+    """API to insert a new train route into the database."""
+
+    email_body = None
+    log_info("Initiating the process of adding a new train route")
     try:
-        data = request.get_json()
+        data = request.json
+        log_info(f"Received data: {data}")
 
-        # Log the incoming request data
-        log_info(f"Received data for booking: {data}")
+        train_number = data.get('train_number')
+        train_name = data.get('train_name')
+        station_name = data.get('station_name')
+        arrival_time = data.get('arrival_time')
+        departure_time = data.get('departure_time')
+        origin_station = data.get('origin')
+        destination_station = data.get('destination')
 
-        # Validate input data
-        validation_error = validate_booking_data(data)
-        if validation_error:
-            log_error(f"Validation Error: {validation_error}")
-            return jsonify({"error": validation_error}), 400
+        if not all([train_number, train_name, station_name, arrival_time, departure_time, origin_station,
+                    destination_station]):
+            log_error(f"Missing required fields in request: {data}")
+            return jsonify({"error": "Missing required fields"}), 400
 
-        # Record the time of booking
-        booking_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        train = session.query(Train).filter_by(train_number=train_number).first()
+        if not train:
+            log_error(f"Train with number {train_number} not found in database")
+            return jsonify({"error": f"Train with number {train_number} not found"}), 404
 
-        # Create a new booking instance
-        new_booking = Booking(
-            user_id=data['user_id'],
-            train_id=data['train_id'],
-            seats_booked=data['seats_booked']
+        existing_route = session.query(TrainRoute).filter_by(
+            train_number=train_number,
+            station_name=station_name
+        ).first()
+
+        if existing_route:
+            log_error(f"Train route for {train_name} at {station_name} already exists")
+            return jsonify({"error": "Train route already exists for this train number and station name"}), 409
+
+        new_route = TrainRoute(
+            train_number=train_number,
+            train_name=train_name,
+            station_name=station_name,
+            arrival_time=arrival_time,
+            departure_time=departure_time,
+            origin=origin_station,
+            destination=destination_station
         )
 
-        # Add and commit the new booking to the database
-        session.add(new_booking)
+        session.add(new_route)
         session.commit()
 
-        # Log the successful booking creation
-        log_info(f"Created booking: {new_booking.booking_id} at {booking_time}")
+        log_info(f"Successfully added train route for {train_name} at {station_name}")
 
-        # Send the email notification using the new function
-        send_booking_confirmation_email(
-            recipient=data['email'],
-            booking_id=new_booking.booking_id,
-            user_id=new_booking.user_id,
-            train_id=new_booking.train_id,
-            seats_booked=new_booking.seats_booked,
-            booking_time=booking_time
+        creation_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        email_body = generate_route_email_body(
+            train_name=train_name,
+            train_number=train_number,
+            station_name=station_name,
+            arrival_time=arrival_time,
+            departure_time=departure_time,
+            creation_time=creation_time,
+            origin=origin_station,
+            destination=destination_station
         )
 
-        # Return the booking details as JSON
-        return jsonify(new_booking.to_dict()), 201
+        send_email(
+            to_email=ADMIN_EMAIL,
+            subject="New Train Route Added",
+            body=email_body
+        )
 
-    except SQLAlchemyError as db_error:
+        threading.Thread(target=speak, args=(f"Train {train_name} has been successfully added.",)).start()
+
+        return jsonify({
+            "message": "Train route added successfully",
+            "route": {
+                "train_number": train_number,
+                "train_name": train_name,
+                "station_name": station_name,
+                "arrival_time": arrival_time,
+                "departure_time": departure_time,
+                "origin": origin_station,
+                "destination": destination_station
+            }
+        }), 201
+
+    except SQLAlchemyError as e:
         session.rollback()
-        log_error(f"Database error during booking creation: {db_error}")
-        return jsonify({"error": "Database error", "details": str(db_error)}), 500
+        log_error(f"Database error: {str(e)}")
+
+        if not email_body:
+            email_body = f"Failed to add train route due to database error: {str(e)}"
+
+        send_email(
+            to_email=ADMIN_EMAIL,
+            subject="Error Adding Train Route",
+            body=email_body
+        )
+        threading.Thread(target=speak, args=("Error occurred while adding the train route.",)).start()
+        return jsonify({"error": "Database error occurred"}), 500
 
     except Exception as e:
-        log_error(f"Unexpected error during booking creation: {e}")
-        return jsonify({"error": "Internal server error", "details": str(e)}), 500
+        session.rollback()
+        log_error(f"Exception occurred: {str(e)}")
+
+        if not email_body:
+            email_body = f"Failed to add train route due to an unexpected error: {str(e)}"
+
+        send_email(
+            to_email=ADMIN_EMAIL,
+            subject="Error Adding Train Route",
+            body=email_body
+        )
+        threading.Thread(target=speak, args=("Unexpected error occurred while adding the train route.",)).start()
+        return jsonify({"error": "An unexpected error occurred"}), 500
 
     finally:
-        session.close()  # Ensure the session is closed regardless of success or failure
-'''
+        session.close()
+        log_info("Finished the process of Adding New Train Route")
+
+
+@app.route('/fetch-train-route', methods=['GET'])
+def fetch_train_route():
+    """API to fetch one or multiple train routes from the database with case-insensitive searches."""
+    email_body = None
+    log_info("Initiating the process of fetching train routes")
+    try:
+        train_number = request.args.get('train_number', '').strip().lower()
+        station_name = request.args.get('station_name', '').strip().lower()
+        origin = request.args.get('origin', '').strip().lower()
+        destination = request.args.get('destination', '').strip().lower()
+        route_id = request.args.get('route_id', None)
+
+        filters = {}
+        if train_number:
+            filters['train_number'] = train_number
+        if station_name:
+            filters['station_name'] = station_name
+        if origin:
+            filters['origin'] = origin
+        if destination:
+            filters['destination'] = destination
+        if route_id:
+            filters['route_id'] = route_id
+
+        query = session.query(TrainRoute)
+
+        if route_id:
+            query = query.filter(TrainRoute.route_id == route_id)
+        else:
+            if train_number:
+                query = query.filter(TrainRoute.train_number.ilike(f'%{train_number}%'))
+            if station_name:
+                query = query.filter(TrainRoute.station_name.ilike(f'%{station_name}%'))
+            if origin:
+                query = query.filter(TrainRoute.origin.ilike(f'%{origin}%'))
+            if destination:
+                query = query.filter(TrainRoute.destination.ilike(f'%{destination}%'))
+
+        train_routes = query.all()
+
+        routes_data = [
+            {
+                "train_number": route.train_number,
+                "train_name": route.train_name,
+                "station_name": route.station_name,
+                "arrival_time": str(route.arrival_time),
+                "departure_time": str(route.departure_time),
+                "origin": route.origin,
+                "destination": route.destination,
+                "route_id": route_id
+            } for route in train_routes
+        ]
+
+        total_count = len(routes_data)
+
+        if total_count == 0:
+            log_error("No train routes found matching the provided filters")
+            return jsonify({"message": "No train routes found", "total_count": total_count}), 404
+
+        log_info(f"Successfully fetched {total_count} train route(s)")
+
+        creation_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        email_body = generate_fetch_email_body(
+            routes=routes_data,
+            creation_time=creation_time,
+            total_count=total_count
+        )
+
+        send_email(
+            to_email=ADMIN_EMAIL,
+            subject="Train Routes Fetched",
+            body=email_body
+        )
+
+        return jsonify({
+            "message": "Train routes fetched successfully",
+            "total_count": total_count,  # Include total count in the response
+            "routes": routes_data
+        }), 200
+
+    except SQLAlchemyError as e:
+        session.rollback()
+        log_error(f"Database error: {str(e)}")
+
+        if not email_body:
+            email_body = f"Failed to fetch train routes due to database error: {str(e)}"
+
+        send_email(
+            to_email=ADMIN_EMAIL,
+            subject="Error Fetching Train Routes",
+            body=email_body
+        )
+        return jsonify({"error": "Database error occurred"}), 500
+
+    except Exception as e:
+        session.rollback()
+        log_error(f"Exception occurred: {str(e)}")
+
+        if not email_body:
+            email_body = f"Failed to fetch train routes due to an unexpected error: {str(e)}"
+
+        send_email(
+            to_email=ADMIN_EMAIL,
+            subject="Error Fetching Train Routes",
+            body=email_body
+        )
+        return jsonify({"error": "An unexpected error occurred"}), 500
+
+    finally:
+        session.close()
+        log_info("Finished the process of Fetching Train Routes")
+
+
+@app.route('/update-train-route', methods=['PUT'])
+@otp_required
+def update_train_route():
+    """API to update an existing train route in the database."""
+
+    email_body = None
+    route_id = None
+    log_info("Initiating the process of updating the train route")
+
+    try:
+        data = request.json
+        log_info(f"Received data: {data}")
+
+        route_id = data.get('route_id')
+        if not route_id:
+            log_error("No route ID provided for update")
+            return jsonify({"error": "Route ID is required"}), 400
+
+        train_number = data.get('train_number')
+        train_name = data.get('train_name')
+        station_name = data.get('station_name')
+        arrival_time = data.get('arrival_time')
+        departure_time = data.get('departure_time')
+        origin_station = data.get('origin')
+        destination_station = data.get('destination')
+
+        if not any([route_id, train_name, station_name, arrival_time, departure_time, origin_station,
+                    destination_station]):
+            log_error(f"No fields provided to update for route ID {route_id}")
+            return jsonify({"error": "No fields provided to update"}), 400
+
+        route_to_update = session.query(TrainRoute).filter_by(route_id=route_id).first()
+        if not route_to_update:
+            log_error(f"Train route with ID {route_id} not found in database")
+            return jsonify({"error": f"Train route with ID {route_id} not found"}), 404
+
+        if route_id:
+            route_to_update.route_id = route_id
+        if train_number:
+            route_to_update.train_number = train_number
+        if train_name:
+            route_to_update.train_name = train_name
+        if station_name:
+            route_to_update.station_name = station_name
+        if arrival_time:
+            route_to_update.arrival_time = arrival_time
+        if departure_time:
+            route_to_update.departure_time = departure_time
+        if origin_station:
+            route_to_update.origin = origin_station
+        if destination_station:
+            route_to_update.destination = destination_station
+
+        session.commit()
+
+        log_info(f"Successfully updated train route ID {route_id}")
+
+        creation_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        email_body = generate_route_email_body(
+            train_name=train_name or route_to_update.train_name,
+            train_number=train_number or route_to_update.train_number,
+            station_name=station_name or route_to_update.station_name,
+            arrival_time=arrival_time or route_to_update.arrival_time,
+            departure_time=departure_time or route_to_update.departure_time,
+            creation_time=creation_time,
+            origin=origin_station or route_to_update.origin,
+            destination=destination_station or route_to_update.destination
+        )
+
+        send_email(
+            to_email=ADMIN_EMAIL,
+            subject="Train Route Updated",
+            body=email_body
+        )
+
+        threading.Thread(target=speak, args=(f"Train route ID {route_id} has been successfully updated.",)).start()
+
+        return jsonify({
+            "message": "Train route updated successfully",
+            "route": {
+                "route_id": route_to_update.route_id,
+                "train_number": route_to_update.train_number,
+                "train_name": route_to_update.train_name,
+                "station_name": route_to_update.station_name,
+                "arrival_time": str(route_to_update.arrival_time),
+                "departure_time": str(route_to_update.departure_time),
+                "origin": route_to_update.origin,
+                "destination": route_to_update.destination
+
+            }
+        }), 200
+
+    except SQLAlchemyError as e:
+        session.rollback()
+        log_error(f"Database error while updating route ID {route_id}: {str(e)}")
+
+        if not email_body:
+            email_body = f"Failed to update train route ID {route_id} due to database error: {str(e)}"
+
+        send_email(
+            to_email=ADMIN_EMAIL,
+            subject="Error Updating Train Route",
+            body=email_body
+        )
+        threading.Thread(target=speak, args=("Error occurred while updating the train route.",)).start()
+        return jsonify({"error": "Database error occurred"}), 500
+
+    except Exception as e:
+        session.rollback()
+        log_error(f"Exception occurred while updating route ID {route_id}: {str(e)}")
+
+        if not email_body:
+            email_body = f"Failed to update train route ID {route_id} due to an unexpected error: {str(e)}"
+
+        send_email(
+            to_email=ADMIN_EMAIL,
+            subject="Error Updating Train Route",
+            body=email_body
+        )
+        threading.Thread(target=speak, args=("Unexpected error occurred while updating the train route.",)).start()
+        return jsonify({"error": "An unexpected error occurred"}), 500
+
+    finally:
+        session.close()
+        log_info("Finished the process of updating train route")
+
+
+@app.route('/delete-train-route', methods=['DELETE'])
+@otp_required
+def delete_train_route():
+    """API to delete a train route from the database based on any combination of query parameters."""
+
+    log_info("Initiating the process of deleting a train route")
+
+    email_time = datetime.now()
+    deletion_time = datetime.now()
+    formatted_deletion_time = None
+    train_number = None
+    station_name = None
+    try:
+        train_number = request.args.get('train_number')
+        station_name = request.args.get('station_name')
+        user_email = request.args.get('email')
+        otp = request.args.get('otp')
+
+        log_info(
+            f"Received parameters: train_number={train_number}, station_name={station_name}, email={user_email}, otp={otp}")
+
+        if not (train_number or station_name):
+            log_error("Missing required query parameters: at least train_number or station_name must be provided")
+            return jsonify({"error": "At least one of train_number or station_name is required"}), 400
+
+        query = session.query(TrainRoute)
+
+        if train_number:
+            query = query.filter_by(train_number=train_number)
+        if station_name:
+            query = query.filter_by(station_name=station_name)
+
+        route_to_delete = query.first()
+
+        if not route_to_delete:
+            log_error(f"Train route not found for train number: {train_number} and station name: {station_name}")
+            return jsonify({"error": "Train route not found"}), 404
+
+        formatted_deletion_time = deletion_time.strftime("%Y-%m-%d %H:%M:%S")
+
+        session.delete(route_to_delete)
+        session.commit()
+
+        log_info(
+            f"Successfully deleted train route for {route_to_delete.train_number} at {route_to_delete.station_name}")
+
+        notify_deletion(route_to_delete.train_number, route_to_delete.station_name, deletion_status="success",
+                        email_time=email_time, formatted_deletion_time=formatted_deletion_time)
+
+        threading.Thread(target=speak,
+                         args=(
+                             f"Train route for {route_to_delete.train_number} at {route_to_delete.station_name} has been deleted.",)).start()
+
+        return jsonify({
+            "message": "Train route deleted successfully",
+            "route": {
+                "train_number": route_to_delete.train_number,
+                "station_name": route_to_delete.station_name,
+                "departure_time": route_to_delete.departure_time.strftime(
+                    "%Y-%m-%d %H:%M:%S") if route_to_delete.departure_time else None,
+                "arrival_time": route_to_delete.arrival_time.strftime(
+                    "%Y-%m-%d %H:%M:%S") if route_to_delete.arrival_time else None,
+                "deleted_at": formatted_deletion_time,
+
+            }
+        }), 200
+
+    except SQLAlchemyError as e:
+        session.rollback()
+        log_error(f"Database error: {str(e)}")
+
+        notify_deletion(train_number, station_name, deletion_status="error", email_time=email_time,
+                        formatted_deletion_time=formatted_deletion_time)
+
+        threading.Thread(target=speak, args=("Error occurred while deleting the train route.",)).start()
+        return jsonify({"error": "Database error occurred"}), 500
+
+    except Exception as e:
+        session.rollback()
+        log_error(f"Exception occurred: {str(e)}")
+
+        notify_deletion(train_number, station_name, deletion_status="error", email_time=email_time,
+                        formatted_deletion_time=formatted_deletion_time)
+
+        threading.Thread(target=speak, args=("Unexpected error occurred while deleting the train route.",)).start()
+        return jsonify({"error": "An unexpected error occurred"}), 500
+
+    finally:
+        session.close()
+        log_info("Finished the process of Deleting Train Route")
+
+# ---------------------------------------------- TRAIN ROUTE TABLE -----------------------------------------------------
+
+
 
 if __name__ == "__main__":
     app.run(debug=True)
