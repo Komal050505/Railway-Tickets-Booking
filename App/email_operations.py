@@ -11,7 +11,6 @@ Functions:
 
 # Standard library imports (for sending emails)
 import smtplib
-from datetime import datetime
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 
@@ -28,9 +27,18 @@ from Logging_package.logging_utility import log_info, log_error
 
 
 def send_email_otp(receiver_email, otp):
-    """Send OTP to the user's email."""
-    sender_email = "komalsaikiran05@gmail.com"
-    sender_password = "qlqgqoyzaynbogra"
+    """
+    Send an OTP to the user's email address.
+
+    Args:
+        receiver_email (str): The email address to which the OTP will be sent.
+        otp (str): The one-time password to send.
+
+    Raises:
+        Exception: Raises an exception if sending the email fails.
+    """
+    sender_email = SENDER_EMAIL
+    sender_password = PASSWORD
     subject = "Your OTP"
     body = f"Your OTP is: {otp}"
 
@@ -39,9 +47,15 @@ def send_email_otp(receiver_email, otp):
     msg["From"] = sender_email
     msg["To"] = receiver_email
 
-    with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
-        server.login(sender_email, sender_password)
-        server.sendmail(sender_email, receiver_email, msg.as_string())
+    try:
+        with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
+            server.login(sender_email, sender_password)
+            server.sendmail(sender_email, receiver_email, msg.as_string())
+        log_info(f"OTP sent to {receiver_email}")
+
+    except Exception as e:
+        log_error(f"Failed to send OTP to {receiver_email}: {str(e)}")
+        raise
 
 
 def send_email(to_email, subject, body):
@@ -76,7 +90,7 @@ def send_email(to_email, subject, body):
     except Exception as e:
         log_error(f"An error occurred while sending email: {str(e)}")
 
-    return False  # Indicate failure
+    return False
 
 
 def notify_success(subject, details):
@@ -141,227 +155,378 @@ def generate_train_email_body(train_name, train_number, source, destination, dep
                               available_seats, total_seats, creation_time):
     """
     Generate the email body for the new train added notification.
+
+    :param train_name: (str) Name of the train.
+    :param train_number: (str) Unique identifier of the train.
+    :param source: (str) Starting point of the train.
+    :param destination: (str) Destination of the train.
+    :param departure_time: (str) Scheduled departure time of the train.
+    :param arrival_time: (str) Scheduled arrival time of the train.
+    :param available_seats: (int) Number of available seats on the train.
+    :param total_seats: (int) Total number of seats on the train.
+    :param creation_time: (str) Time when the train record was created.
+
+    :return: (str) Formatted email body with train details.
     """
-    return (f"Dear Team A new train has been added Successfully:\n"
-            f"-----------------------------------\n"
-            f"Train Name: {train_name}\n"
-            f"Train Number: {train_number}\n"
-            f"Source: {source}\n"
-            f"Destination: {destination}\n"
-            f"Departure Time: {departure_time}\n"
-            f"Arrival Time: {arrival_time}\n"
-            f"Available Seats: {available_seats}\n"
-            f"Total Seats: {total_seats}\n"
-            f"Added at: {creation_time} (IST)\n"
-            f"-----------------------------------\n"
-            f"Best Regards,\n"
-            f"Train Management System")
+
+    try:
+        email_body = (f"Dear Team,\n\n"
+                      f"A new train has been added successfully:\n"
+                      f"-----------------------------------\n"
+                      f"Train Name: {train_name}\n"
+                      f"Train Number: {train_number}\n"
+                      f"Source: {source}\n"
+                      f"Destination: {destination}\n"
+                      f"Departure Time: {departure_time}\n"
+                      f"Arrival Time: {arrival_time}\n"
+                      f"Available Seats: {available_seats}\n"
+                      f"Total Seats: {total_seats}\n"
+                      f"Added at: {creation_time} (IST)\n"
+                      f"-----------------------------------\n"
+                      f"Best Regards,\n"
+                      f"Train Management System")
+        return email_body
+
+    except Exception as e:
+        log_error(f"Error generating train email body: {str(e)}")
+        raise
 
 
 def fetch_train_email_body(train_records, total_count):
     """
-    Generate the email body for train records.
+       Generate the email body for train records.
 
-    Args:
-        train_records (list): A list of train record dictionaries.
-        total_count (int): Total count of train records found.
-
-    Returns:
-        str: Formatted email body with train details.
+    :param train_records: (list) A list of train record dictionaries.
+    :param total_count: (int) Total count of train records found.
+    :return: (str) Formatted email body with train details.
     """
-    email_body = f"Train Records Fetched (Total Count: {total_count}):\n\n"
+    try:
+        email_body = f"Train Records Fetched (Total Count: {total_count}):\n\n"
 
-    for train in train_records:
-        email_body += (
-            f"Train Id: {train['train_id']}\n"
-            f"Train Name: {train['train_name']}\n"
-            f"Train Number: {train['train_number']}\n"
-            f"Source: {train['source']}\n"
-            f"Destination: {train['destination']}\n"
-            f"Departure Time: {train['departure_time']}\n"
-            f"Arrival Time: {train['arrival_time']}\n"
-            f"Total Seats: {train['total_seats']}\n"  
-            f"Available Seats: {train['available_seats']}\n"
-            f"Waiting List Count: {train['waiting_list_count']}\n"  
-            f"-----------------------------------\n"
-        )
-    return email_body
+        for train in train_records:
+            email_body += (
+                f"Train Id: {train['train_id']}\n"
+                f"Train Name: {train['train_name']}\n"
+                f"Train Number: {train['train_number']}\n"
+                f"Source: {train['source']}\n"
+                f"Destination: {train['destination']}\n"
+                f"Departure Time: {train['departure_time']}\n"
+                f"Arrival Time: {train['arrival_time']}\n"
+                f"Total Seats: {train['total_seats']}\n"
+                f"Available Seats: {train['available_seats']}\n"
+                f"Waiting List Count: {train['waiting_list_count']}\n"
+                f"-----------------------------------\n"
+            )
+        return email_body
+
+    except Exception as e:
+        log_error(f"Error generating email body for fetched train records: {str(e)}")
+        raise
 
 
 def construct_train_email_body(train_name, train_number, source, destination,
                                departure_time, arrival_time, total_seats,
                                available_seats, waiting_list_count, timestamp):
     """
-    Construct the email body for train notifications.
+     Construct the email body for train notifications.
 
-    Args:
-        train_name (str): Name of the train.
-        train_number (str): Unique identifier of the train.
-        source (str): Starting point of the train.
-        destination (str): Destination of the train.
-        departure_time (str): Scheduled departure time of the train.
-        arrival_time (str): Scheduled arrival time of the train.
-        total_seats (int): Total number of seats in the train.
-        available_seats (int): Number of available seats.
-        waiting_list_count (int): Number of users in the waiting list.
-        timestamp (str): Time when the record was added or updated.
-
-    Returns:
-        str: Formatted email body with train details.
+    :param train_name: (str) Name of the train.
+    :param train_number: (str) Unique identifier of the train.
+    :param source: (str) Starting point of the train.
+    :param destination: (str) Destination of the train.
+    :param departure_time: (str) Scheduled departure time of the train.
+    :param arrival_time: (str) Scheduled arrival time of the train.
+    :param total_seats: (int) Total number of seats in the train.
+    :param available_seats: (int) Number of available seats.
+    :param waiting_list_count: (int) Number of users in the waiting list.
+    :param timestamp: (str) Time when the record was added or updated.
+    :return:
+    (str) Formatted email body with train details.
     """
-    email_body = (
-        f"Dear Admin,\n\n"
-        f"We are pleased to inform you that the train details have been updated.\n\n"
-        f"**Train Details:**\n"
-        f"- **Train Name:** {train_name}\n"
-        f"- **Train Number:** {train_number}\n"
-        f"- **Source:** {source}\n"
-        f"- **Destination:** {destination}\n"
-        f"- **Departure Time:** {departure_time}\n"
-        f"- **Arrival Time:** {arrival_time}\n"
-        f"- **Total Seats:** {total_seats}\n"
-        f"- **Available Seats:** {available_seats}\n"
-        f"- **Waiting List Count:** {waiting_list_count}\n\n"
-        f"**Record Timestamp:** {timestamp}\n\n"
-        f"Best Regards,\n"
-        f"Train Management System"
-    )
-    return email_body
+
+    try:
+        email_body = (
+            f"Dear Admin,\n\n"
+            f"We are pleased to inform you that the train details have been updated.\n\n"
+            f"**Train Details:**\n"
+            f"- **Train Name:** {train_name}\n"
+            f"- **Train Number:** {train_number}\n"
+            f"- **Source:** {source}\n"
+            f"- **Destination:** {destination}\n"
+            f"- **Departure Time:** {departure_time}\n"
+            f"- **Arrival Time:** {arrival_time}\n"
+            f"- **Total Seats:** {total_seats}\n"
+            f"- **Available Seats:** {available_seats}\n"
+            f"- **Waiting List Count:** {waiting_list_count}\n\n"
+            f"**Record Timestamp:** {timestamp}\n\n"
+            f"Best Regards,\n"
+            f"Train Management System"
+        )
+        return email_body
+
+    except Exception as e:
+        log_error(f"Error constructing email body for train {train_number}: {str(e)}")
+        raise
 
 
 def prepare_and_send_email(action, train_details, operation_time, email):
     """
     Prepares and sends a detailed email notification for the action performed on the trains.
 
-    :param action: The action performed (e.g., 'deletion').
-    :param train_details: A list of train names that were deleted.
-    :param operation_time: The time the operation took place.
-    :param email: The email address to send the notification to.
+    :param action:(str) The action performed (e.g., 'deletion').
+    :param train_details:(list) A list of train names that were deleted.
+    :param operation_time:(str) The time the operation took place.
+    :param email:(str) The email address to send the notification to.
+    Returns: None
     """
-    email_subject = f"Train {action.capitalize()} Notification"
+    try:
+        email_subject = f"Train {action.capitalize()} Notification"
 
-    email_body = f"""
-    Dear Admin,
+        train_list = ', '.join(train_details) if train_details else "No trains involved"
 
-    The following trains were {action} successfully:
+        email_body = f"""
+            Dear Admin,
 
-    {', '.join(train_details)}
+            The following trains were {action} successfully:
 
-    Time of operation: {operation_time}
+            {train_list}
 
-    Best Regards,
-    Train Management System
-    """
-    send_email(to_email=[email], subject=email_subject, body=email_body)
+            Time of operation: {operation_time}
+
+            Best Regards,
+            Train Management System
+            """
+
+        send_email(to_email=[email], subject=email_subject, body=email_body)
+
+        log_info(f"Email notification for train {action} sent to {email} at {operation_time}.")
+
+    except Exception as e:
+        log_error(f"Failed to send train {action} notification email to {email}: {str(e)}")
+        raise
 
 
 def send_booking_confirmation_email(recipient, booking_id, user_id, train_id, seats_booked, booking_time):
-    """Send a booking confirmation email."""
-    subject = "Booking Confirmation"
-    body = (
-        f"Dear Customer,\n\n"
-        f"Your booking has been confirmed!\n"
-        f"Booking ID: {booking_id}\n"
-        f"User ID: {user_id}\n"
-        f"Train ID: {train_id}\n"
-        f"Seats Booked: {seats_booked}\n"
-        f"Booking Time: {booking_time}\n\n"
-        "Thank you for booking with us!\n"
-        "Safe travels!\n"
-    )
+    """
+     Send a booking confirmation email to the customer.
 
-    send_email(to_email=[recipient], subject=subject, body=body)
+    :param recipient: (str): Email address of the recipient.
+    :param booking_id: (str): The booking ID.
+    :param user_id: (str): The user ID associated with the booking.
+    :param train_id: (str): The train ID for the booking.
+    :param seats_booked: (int): Number of seats booked.
+    :param booking_time: (str): Time when the booking was made.
+    :return: None
+    """
+    try:
+        subject = "Booking Confirmation"
+        body = (
+            f"Dear Customer,\n\n"
+            f"Your booking has been confirmed!\n"
+            f"Booking ID: {booking_id}\n"
+            f"User ID: {user_id}\n"
+            f"Train ID: {train_id}\n"
+            f"Seats Booked: {seats_booked}\n"
+            f"Booking Time: {booking_time}\n\n"
+            "Thank you for booking with us!\n"
+            "Safe travels!\n"
+        )
+
+        send_email(to_email=[recipient], subject=subject, body=body)
+        log_info(f"Booking confirmation email sent successfully to {recipient} for booking ID {booking_id}.")
+
+    except Exception as e:
+        log_error(f"Failed to send booking confirmation email to {recipient}: {str(e)}")
+        raise
 
 
 def generate_route_email_body(train_name, train_number, station_name, arrival_time, departure_time, creation_time,
                               origin, destination):
     """
-    Generate the email body for the new train route added notification.
+      Generate the email body for the new train route added notification.
 
-    Parameters:
-    - train_name: The name of the train.
-    - train_number: The number of the train.
-    - station_name: The station where the route is added.
-    - arrival_time: The arrival time of the train at the station.
-    - departure_time: The departure time of the train from the station.
-    - creation_time: The time when the route was added.
-    - origin: The starting point of the train route.
-    - destination: The ending point of the train route.
+    :param train_name: (str) The name of the train.
+    :param train_number: (str) The number of the train.
+    :param station_name: (str) The station where the route is added.
+    :param arrival_time: (str) The arrival time of the train at the station.
+    :param departure_time: (str) The departure time of the train from the station.
+    :param creation_time: (str) The time when the route was added.
+    :param origin: (str) The starting point of the train route.
+    :param destination: (str) The ending point of the train route.
 
-    Returns:
-    - str: Formatted email body.
+    :return: str Formatted email body for route addition notification.
     """
-    return (f"Dear Team,\n\n"
-            f"A new train route has been added successfully:\n"
-            f"-----------------------------------\n"
-            f"Train Name: {train_name}\n"
-            f"Train Number: {train_number}\n"
-            f"Station Name: {station_name}\n"
-            f"Arrival Time: {arrival_time}\n"
-            f"Departure Time: {departure_time}\n"
-            f"Origin: {origin}\n"
-            f"Destination: {destination}\n"
-            f"Added at: {creation_time} (IST)\n"
-            f"-----------------------------------\n"
-            f"Best Regards,\n"
-            f"Train Management System")
+    try:
+        return (f"Dear Team,\n\n"
+                f"A new train route has been added successfully:\n"
+                f"-----------------------------------\n"
+                f"Train Name: {train_name}\n"
+                f"Train Number: {train_number}\n"
+                f"Station Name: {station_name}\n"
+                f"Arrival Time: {arrival_time}\n"
+                f"Departure Time: {departure_time}\n"
+                f"Origin: {origin}\n"
+                f"Destination: {destination}\n"
+                f"Added at: {creation_time} (IST)\n"
+                f"-----------------------------------\n"
+                f"Best Regards,\n"
+                f"Train Management System")
+    except Exception as e:
+        log_error(f"Error generating route email body: {str(e)}")
+        raise
 
 
 def generate_fetch_email_body(routes, creation_time, total_count):
-    """Generate the email body for fetched train routes."""
-    body = f"Train routes fetched at {creation_time}:\n"
-    body += f"Total Count: {total_count}\n\n"
-    for route in routes:
-        body += f"Dear Team,\n\n"
-        body += f"Fetched Train Details Successfully:\n"
-        body += f"-----------------------------------\n"
-        body += f"Route ID: {route.get('route_id', 'N/A')}\n"
-        body += f"Train Number: {route['train_number']}\n"
-        body += f"Train Name: {route['train_name']}\n"
-        body += f"Station Name: {route['station_name']}\n"
-        body += f"Arrival Time: {route['arrival_time']}\n"
-        body += f"Departure Time: {route['departure_time']}\n"
-        body += f"Origin: {route['origin']}\n"
-        body += f"Destination: {route['destination']}\n\n"
-        body += f"Best Regards,\n"
-        body += f"Train Management System"
+    """
+    Generate the email body for fetched train routes
 
-    return body
+    :param routes: list of dictionaries containing train route details
+    :param creation_time: timestamp when the routes were fetched
+    :param total_count: total number of routes fetched
+    :return: a formatted string containing the fetched train route details
+    """
+
+    try:
+        body = f"Train routes fetched at {creation_time}:\n"
+        body += f"Total Count: {total_count}\n\n"
+
+        for route in routes:
+            body += f"Dear Team,\n\n"
+            body += f"Fetched Train Details Successfully:\n"
+            body += f"-----------------------------------\n"
+            body += f"Route ID: {route.get('route_id', 'N/A')}\n"
+            body += f"Train Number: {route.get('train_number', 'N/A')}\n"
+            body += f"Train Name: {route.get('train_name', 'N/A')}\n"
+            body += f"Station Name: {route.get('station_name', 'N/A')}\n"
+            body += f"Arrival Time: {route.get('arrival_time', 'N/A')}\n"
+            body += f"Departure Time: {route.get('departure_time', 'N/A')}\n"
+            body += f"Origin: {route.get('origin', 'N/A')}\n"
+            body += f"Destination: {route.get('destination', 'N/A')}\n\n"
+            body += "Best Regards,\nTrain Management System\n\n"
+
+        return body
+
+    except Exception as e:
+        log_error(f"Error generating fetch email body: {str(e)}")
+        raise
 
 
 def notify_deletion(train_number, station_name, deletion_status, email_time, formatted_deletion_time):
     """
-    Generate the email body for the deletion of a train route and send the notification.
+       Generate the email body for the deletion of a train route and send the notification.
 
-    Parameters:
-    - train_number (str): The number of the train.
-    - station_name (str): The station name where the route is deleted.
-    - deletion_status (str): The status of the deletion ("success" or "error").
-    - email_time (datetime): The time when the email notification is sent.
-    - formatted_deletion_time (str): The time when the deletion occurred, formatted as a string.
+    :param train_number: (str) The number of the train.
+    :param station_name: (str)  The station name where the route is deleted.
+    :param deletion_status: (str) The status of the deletion ("success" or "error").
+    :param email_time: (datetime) The time when the email notification is sent.
+    :param formatted_deletion_time: (str) The time when the deletion occurred, formatted as a string.
+    :return:
     """
-    # Format the email time
-    formatted_email_time = email_time.strftime("%Y-%m-%d %H:%M:%S")
 
-    # Construct the email body
-    email_body = (
-        f"Dear Team,\n\n"
-        f"The following train route deletion details:\n"
-        f"-----------------------------------\n"
-        f"Train Number: {train_number}\n"
-        f"Station Name: {station_name}\n"
-        f"Deleted at: {formatted_deletion_time} (IST)\n"  
-        f"Notification Sent at: {formatted_email_time} (IST)\n"  
-        f"Status: {'Deletion Successful' if deletion_status == 'success' else 'Deletion Failed'}\n"
-        f"-----------------------------------\n"
-        f"Best Regards,\n"
-        f"Train Management System"
-    )
+    try:
+        formatted_email_time = email_time.strftime("%Y-%m-%d %H:%M:%S")
+        email_body = (
+            f"Dear Team,\n\n"
+            f"The following train route deletion details:\n"
+            f"-----------------------------------\n"
+            f"Train Number: {train_number}\n"
+            f"Station Name: {station_name}\n"
+            f"Deleted at: {formatted_deletion_time} (IST)\n"
+            f"Notification Sent at: {formatted_email_time} (IST)\n"
+            f"Status: {'Deletion Successful' if deletion_status == 'success' else 'Deletion Failed'}\n"
+            f"-----------------------------------\n"
+            f"Best Regards,\n"
+            f"Train Management System"
+        )
 
-    subject = f"Train Route Deletion Status: {deletion_status.capitalize()}"
+        subject = f"Train Route Deletion Status: {deletion_status.capitalize()}"
 
-    send_email(
-        to_email=ADMIN_EMAIL,
-        subject=subject,
-        body=email_body
-    )
+        send_email(
+            to_email=ADMIN_EMAIL,
+            subject=subject,
+            body=email_body
+        )
+
+    except Exception as err:
+        log_error(f"Error generating notify deletion email body: {str(err)}")
+        raise
+
+
+def generate_booking_email_body(booking_id, username, train_number, train_name, seats_booked, seat_preference,
+                                booking_date, travel_date, source, destination, creation_time):
+    """
+    Generates the email body for the booking confirmation notification.
+
+    :param train_number: Number of the train for which the booking was made.
+    :param booking_id: Unique identifier for the booking.
+    :param username: Name of the user who made the booking.
+    :param train_name: Name of the train for which the booking was made.
+    :param seats_booked: Number of seats booked by the user.
+    :param seat_preference: Seat preference selected by the user (if any).
+    :param booking_date: The date when the booking was created.
+    :param travel_date: The date of the scheduled travel.
+    :param source: The departure station.
+    :param destination: The arrival station.
+    :param creation_time: The timestamp when the booking was created.
+    :return: A formatted email body with booking details.
+    """
+
+    try:
+        email_body = (
+            f"Dear {username},\n\n"
+            f"Your booking has been successfully created:\n"
+            f"-----------------------------------\n"
+            f"Booking ID: {booking_id}\n"
+            f"User Name: {username}\n"
+            f"Train Number: {train_number}\n"
+            f"Train Name: {train_name}\n"
+            f"Seats Booked: {seats_booked}\n"
+            f"Seat Preference: {seat_preference}\n"
+            f"Booking Date: {booking_date}\n"
+            f"Travel Date: {travel_date}\n"
+            f"Source: {source}\n"
+            f"Destination: {destination}\n"
+            f"Created at: {creation_time} (IST)\n"
+            f"-----------------------------------\n"
+            f"Thank you for choosing our services.\n"
+            f"Best Regards,\n"
+            f"Railway Booking System"
+        )
+
+        # Send the email with the generated email body
+        subject = f"Booking Confirmation {booking_id}"
+        send_email(
+            subject=subject,
+            body=email_body,
+            to_email=ADMIN_EMAIL  # Optionally add the user's email as well
+        )
+
+    except Exception as e:
+        log_error(f"Error generating booking email body: {str(e)}")
+        raise
+
+
+def handle_error(exception, message_prefix, detailed_message):
+    """
+     Handles errors by logging the exception, sending an email notification, and optionally
+    returning or logging a secondary error in case of a failure during error handling.
+
+    :param exception:(Exception) The exception that was raised.
+    :param message_prefix:(str) A prefix for the error message, usually indicating the context.
+    :param detailed_message:(str) A detailed message explaining the error context.
+    :return: (str or None) Returns the secondary error message if an error occurs during error handling,
+                      otherwise returns None.
+    """
+    try:
+        error_message = f"{message_prefix}: {exception}"
+        log_error(f"{detailed_message}: {error_message}")
+
+        send_email(
+            subject="Booking Error Notification",
+            body=f"An error occurred: {error_message}",
+            to_email=ERROR_HANDLING_GROUP_EMAIL
+        )
+
+    except Exception as err:
+        log_error(f"Error occurred while handling another error: {str(err)}")
+        return err

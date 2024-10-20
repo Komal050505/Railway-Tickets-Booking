@@ -7,6 +7,7 @@ import pyttsx3  # Correctly import pyttsx3
 from flask import jsonify, request
 from sqlalchemy.exc import SQLAlchemyError
 
+from App.constants import VOICE_NOTIFICATIONS_ENABLED
 from Db_connections.configurations import session
 from Logging_package.logging_utility import log_error, log_info
 from Models.tables import OTPStore
@@ -17,7 +18,7 @@ engine = pyttsx3.init()
 
 def set_voice_notifications_enabled(enabled: bool):
     """Set the state of voice notifications."""
-    global VOICE_NOTIFICATIONS_ENABLED  # Declare as global to modify it
+
     VOICE_NOTIFICATIONS_ENABLED = enabled
 
 
@@ -108,7 +109,6 @@ def generate_train_search_results(train_records):
     return results
 
 
-
 def validate_time_format(time_str):
     """
     Validate the time format (HH:MM) for departure and arrival times.
@@ -125,3 +125,19 @@ def validate_time_format(time_str):
     except ValueError:
         return False
 
+
+def validate_booking_data(data):
+    """Validates the booking data."""
+    required_fields = ['user_id', 'train_id', 'seats_booked', 'travel_date', 'source', 'destination']
+    try:
+        for field in required_fields:
+            if field not in data or not data[field]:
+                return False, f"{field} is missing or empty."
+
+        try:
+            datetime.strptime(data['travel_date'], '%Y-%m-%d')
+        except ValueError:
+            return False, "Invalid date format for travel_date. Use YYYY-MM-DD."
+    except Exception as err:
+        return jsonify(f"Exception error occurred and error is {err}")
+    return True, None

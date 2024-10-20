@@ -11,13 +11,14 @@ from sqlalchemy.exc import SQLAlchemyError
 from App.email_configurations import RECEIVER_EMAIL, ADMIN_EMAIL
 from App.email_operations import notify_failure, send_email, notify_success, send_email_notification, send_email_otp, \
     generate_train_email_body, fetch_train_email_body, construct_train_email_body, prepare_and_send_email, \
-    generate_route_email_body, generate_fetch_email_body, notify_deletion
+    generate_route_email_body, generate_fetch_email_body, notify_deletion, handle_error, generate_booking_email_body
 from Db_connections.configurations import session
 from Logging_package.logging_utility import log_info, log_debug, log_warning, log_error
 from Models.tables import Booking, Train, Railway_User, OTPStore, TrainRoute
 import pyttsx3
 import threading
-from Utils.reusables import speak, otp_required, generate_train_search_results, validate_time_format
+from Utils.reusables import speak, otp_required, generate_train_search_results, validate_time_format, \
+    validate_booking_data
 import requests
 import psutil
 import random
@@ -31,6 +32,11 @@ engine = pyttsx3.init()
 
 @app.route('/check-api-performance', methods=['POST'])
 def check_api_performance():
+    """
+    Check the performance of a specified API by sending a request and logging CPU and memory usage.
+
+    :return: JSON response containing performance metrics or error message.
+    """
     try:
         payload = request.get_json()
         if not payload or 'url' not in payload or 'method' not in payload:
@@ -114,7 +120,10 @@ def check_api_performance():
 @app.route('/generate-otp', methods=['POST'])
 def generate_otp():
     """
-    Generates an OTP and sends it to the user's email, storing the OTP in PostgreSQL.
+    Generates a One-Time Password (OTP) for the given email and sends it via email.
+    The OTP is stored in the database for verification purposes.
+
+    :return: JSON response indicating success or error.
     """
     email = None
     try:
@@ -124,7 +133,7 @@ def generate_otp():
             return jsonify({"error": "Email is required to generate OTP."}), 400
 
         email = payload['email']
-        otp = random.randint(100000, 999999)  # Generate a 6-digit OTP
+        otp = str(random.randint(100000, 999999))  # Generate a 6-digit OTP
         timestamp = datetime.now()
 
         new_otp = OTPStore(email=email, otp=str(otp), timestamp=timestamp)
@@ -1397,9 +1406,126 @@ def delete_train_route():
         session.close()
         log_info("Finished the process of Deleting Train Route")
 
-# ---------------------------------------------- TRAIN ROUTE TABLE -----------------------------------------------------
 
+# ---------------------------------------------- BOOKING TABLE -----------------------------------------------------
+
+
+@app.route('/book-ticket', methods=['POST'])
+@otp_required
+def book_ticket():
+    """
+    Handle the booking of train tickets by users.
+
+    This endpoint accepts a POST request with JSON data containing user booking details.
+    It validates the input, creates a new booking record in the database, and returns
+    the booking confirmation. In case of errors, it handles exceptions, logs the errors,
+    sends email notifications, and rolls back any database changes.
+
+    Request Payload (JSON):
+        user_id (str): The ID of the user booking the ticket.
+        train_id (str): The ID of the train to be booked.
+        seats_booked (int): The number of seats to be booked.
+        seat_preference (str, optional): The user's seat preference, default is "No preference".
+        travel_date (str): The travel date in 'YYYY-MM-DD' format.
+        source (str): The source station of the journey.
+        destination (str): The destination station of the journey.
+
+    """
+    log_info("Received request to /book-ticket endpoint.")
+    try:
+        # Get JSON data from request
+        data = request.get_json()
+        if not data:
+            raise ValueError("Request payload is missing")
+
+        log_debug(f"Received data: {data}")
+
+        # Validate booking data
+        is_valid, error_message = validate_booking_data(data)
+        if not is_valid:
+            raise ValueError(error_message)
+
+        # Extract booking information
+        user_id = data['user_id']
+        traveler_name = data['traveler_name']  # Ensure traveler name is provided
+        train_id = data['train_id']
+        train_number = data['train_number']
+        train_name = data['train_name']
+        seats_booked = data['seats_booked']
+        seat_preference = data.get('seat_preference', "No preference")
+        travel_date = datetime.strptime(data['travel_date'], '%Y-%m-%d').date()
+        source = data['source']
+        destination = data['destination']
+        booking_date = datetime.now()  # Current date for booking
+
+        log_info(f"Creating booking for user {user_id} ({traveler_name}) on train {train_id}.")
+
+        # Create booking object
+        new_booking = Booking(
+            user_id=user_id,
+            traveler_name=traveler_name,
+            train_id=train_id,
+            train_number=train_number,
+            train_name=train_name,
+            seats_booked=seats_booked,
+            seat_preference=seat_preference,
+            travel_date=travel_date,
+            booking_date=booking_date,
+            source=source,
+            destination=destination
+        )
+
+        # Add and commit booking to the database
+        session.add(new_booking)
+        session.commit()
+
+        log_info(f"Booking {new_booking.booking_id} created successfully.")
+
+        generate_booking_email_body(
+            booking_id=new_booking.booking_id,
+            username=traveler_name,
+            train_number=train_number,
+            train_name=train_name,
+            seats_booked=seats_booked,
+            seat_preference=seat_preference,
+            booking_date=booking_date.strftime('%Y-%m-%d'),
+            travel_date=travel_date.strftime('%Y-%m-%d'),
+            source=source,
+            destination=destination,
+            creation_time=booking_date.strftime('%Y-%m-%d %H:%M:%S'),
+
+        )
+        # Run notification and email in a separate thread
+        threading.Thread(target=speak,
+                         args=(f"Booking {new_booking.booking_id} successfully created for user {user_id}.",)).start()
+
+        # Return success response
+        return jsonify({"success": "Booking created successfully", "booking": new_booking.to_dict()}), 201
+
+    except SQLAlchemyError as e:
+        session.rollback()
+        error_message = f"Database error occurred while booking: {str(e)}"
+        handle_error(e, "Error Adding Booking", error_message)
+
+        threading.Thread(target=speak, args=("A database error occurred while creating the booking.",)).start()
+
+        return jsonify({"error": "Database error occurred"}), 500
+
+    except Exception as e:
+        session.rollback()
+        error_message = f"Unexpected error occurred while booking: {str(e)}"
+        handle_error(e, "Unexpected Error Creating Booking", error_message)
+
+        threading.Thread(target=speak, args=("An unexpected error occurred while creating the booking.",)).start()
+
+        return jsonify({"error": "An unexpected error occurred"}), 500
+
+    finally:
+        session.close()
+        log_info("Finished the process of creating booking.")
 
 
 if __name__ == "__main__":
+    log_info(f"Starting the Flask application {app}.")
     app.run(debug=True)
+    log_info("Flask application has stopped.")
