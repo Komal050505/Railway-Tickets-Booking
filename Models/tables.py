@@ -3,9 +3,9 @@ from sqlalchemy import Column, String, Integer, ForeignKey, DateTime, Date, Time
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
-from werkzeug.security import generate_password_hash, check_password_hash
 
-from App.constants import SEAT_PREFERENCE
+# Werkzeug Imports
+from werkzeug.security import generate_password_hash, check_password_hash
 
 Base = declarative_base()
 
@@ -247,10 +247,10 @@ class Booking(Base):
     user_id = Column(Integer, ForeignKey('railway_user.user_id'), nullable=False)
     traveler_name = Column(String, nullable=False)
     train_id = Column(Integer, ForeignKey('train.train_id'), nullable=False)
-    train_name = Column(String, nullable=False)  # Just as a normal attribute
+    train_name = Column(String, nullable=False)
     train_number = Column(String, nullable=False)
     seats_booked = Column(Integer, nullable=False)
-    seat_preference = Column(String, nullable=True)  # Assuming SEAT_PREFERENCE is defined elsewhere
+    seat_preference = Column(String, nullable=True)
     booking_date = Column(Date, nullable=False)
     travel_date = Column(Date, nullable=False)
     source = Column(String(100), nullable=False)
@@ -261,7 +261,6 @@ class Booking(Base):
     train = relationship("Train", back_populates="bookings")
     passengers = relationship("Passenger", back_populates="booking")
 
-
     def to_dict(self):
         """Convert booking object to dictionary for JSON response."""
         return {
@@ -271,7 +270,7 @@ class Booking(Base):
             "traveler_name": self.traveler_name,
             "train_id": self.train_id,
             "train_name": self.train.train_name,
-            "train_number": self.train_number,  # Include train_number in the response
+            "train_number": self.train_number,
             "seats_booked": self.seats_booked,
             "seat_preference": self.seat_preference,
             "booking_date": self.booking_date.isoformat(),

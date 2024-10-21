@@ -530,3 +530,126 @@ def handle_error(exception, message_prefix, detailed_message):
     except Exception as err:
         log_error(f"Error occurred while handling another error: {str(err)}")
         return err
+
+
+def generate_booking_list_email_body(bookings, total_count):
+    """
+    Generates the email body for the bookings fetch success.
+
+    :param bookings: List of booking dictionaries.
+    :param total_count: Total number of bookings found.
+    :return: A formatted email body with booking details.
+    """
+    try:
+        email_body = (
+            f"Dear Admin,\n\n"
+            f"Here are the details of the bookings fetched:\n"
+            f"-----------------------------------\n"
+            f"Total Bookings: {total_count}\n\n"
+        )
+
+        for booking in bookings:
+            # Safeguard for booking details
+            booking_id = booking.get('booking_id', 'N/A')
+            traveler_name = booking.get('traveler_name', 'N/A')
+            train_name = booking.get('train_name', 'N/A')
+            travel_date = booking.get('travel_date', 'N/A')
+            seats_booked = booking.get('seats_booked', 'N/A')
+
+            email_body += (
+                f"Booking ID: {booking_id}, "
+                f"User: {traveler_name}, "
+                f"Train: {train_name}, "
+                f"Travel Date: {travel_date}, "
+                f"Seats Booked: {seats_booked}\n"
+            )
+
+        email_body += (
+            f"-----------------------------------\n"
+            f"Best Regards,\n"
+            f"Railway Booking System"
+        )
+
+        return email_body
+
+    except Exception as e:
+        log_error(f"Error generating booking list email body: {str(e)}")
+        raise
+
+
+def send_error_email(subject, error_message):
+    """
+    Sends an error notification email with the provided subject and error message.
+
+    :param subject: The subject of the email.
+    :param error_message: Detailed error message to be included in the email body.
+    :return: None
+    """
+    try:
+        email_body = (
+            f"Dear Admin,\n\n"
+            f"An error occurred during the operation:\n"
+            f"-----------------------------------\n"
+            f"Error Details: {error_message}\n"
+            f"-----------------------------------\n"
+            f"Please check the logs for further investigation.\n"
+            f"Best Regards,\n"
+            f"Booking System"
+        )
+
+        send_email(to_email=ERROR_HANDLING_GROUP_EMAIL, subject=subject, body=email_body)
+
+    except Exception as e:
+        log_error(f"Failed to send error email: {str(e)}")
+
+
+def generate_update_booking_email_body(booking_id, username, train_number, train_name, seats_booked, seat_preference,
+                                       booking_date, travel_date, source, destination, formatted_updated_time):
+    """
+    Generates the email body for the booking update notification.
+
+    :param booking_id: Unique identifier for the booking.
+    :param username: Name of the user who made the booking.
+    :param train_number: Number of the train for which the booking was made.
+    :param train_name: Name of the train for which the booking was made.
+    :param seats_booked: Number of seats booked by the user.
+    :param seat_preference: Seat preference selected by the user (if any).
+    :param booking_date: The date when the booking was created.
+    :param travel_date: The date of the scheduled travel.
+    :param source: The departure station.
+    :param destination: The arrival station.
+    :param formatted_updated_time: The timestamp when the booking was last updated.
+    :return: A formatted email body with booking update details.
+    """
+    try:
+        email_body = (
+            f"Dear {username},\n\n"
+            f"Your booking has been successfully updated:\n"
+            f"-----------------------------------\n"
+            f"Booking ID: {booking_id}\n"
+            f"User Name: {username}\n"
+            f"Train Number: {train_number}\n"
+            f"Train Name: {train_name}\n"
+            f"Seats Booked: {seats_booked}\n"
+            f"Seat Preference: {seat_preference}\n"
+            f"Booking Date: {booking_date}\n"
+            f"Travel Date: {travel_date}\n"
+            f"Source: {source}\n"
+            f"Destination: {destination}\n"
+            f"Updated at: {formatted_updated_time} (IST)\n"
+            f"-----------------------------------\n"
+            f"Thank you for choosing our services.\n"
+            f"Best Regards,\n"
+            f"Railway Booking System"
+        )
+
+        subject = f"Booking Update Confirmation {booking_id}"
+        send_email(
+            subject=subject,
+            body=email_body,
+            to_email=ADMIN_EMAIL
+        )
+
+    except Exception as e:
+        log_error(f"Error generating booking update email body: {str(e)}")
+        raise

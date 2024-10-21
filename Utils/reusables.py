@@ -1,43 +1,97 @@
+# Standard Library Imports
 import threading
 import time
 from datetime import datetime, timedelta
 from functools import wraps
 
-import pyttsx3  # Correctly import pyttsx3
+# Third-Party Library Imports
 from flask import jsonify, request
 from sqlalchemy.exc import SQLAlchemyError
+import pyttsx3
 
+# Project-Specific Imports
 from App.constants import VOICE_NOTIFICATIONS_ENABLED
 from Db_connections.configurations import session
 from Logging_package.logging_utility import log_error, log_info
 from Models.tables import OTPStore
 
-# Initialize the TTS engine
+
 engine = pyttsx3.init()
 
 
-def set_voice_notifications_enabled(enabled: bool):
-    """Set the state of voice notifications."""
-
-    VOICE_NOTIFICATIONS_ENABLED = enabled
-
-
 def speak(message):
-    if VOICE_NOTIFICATIONS_ENABLED:  # Check if voice notifications are enabled
-        def speak_in_thread(msg):
-            engine.say(msg)
-            engine.runAndWait()  # This should be called in the same thread
+    """
+        Convert the given message to speech if voice notifications are enabled.
 
-        # Create a thread to handle speaking
-        thread = threading.Thread(target=speak_in_thread, args=(message,))
-        thread.start()
+        This function checks if voice notifications are enabled and, if so,
+        it runs a separate thread to convert the provided message into speech
+        using the pyttsx3 engine. It handles exceptions that may occur during
+        the speech synthesis process, logging errors and notifying users as needed.
+
+        :param message: The message to be spoken aloud. It should be a string
+                        containing the text to convert to speech.
+        :return: None
+        """
+    try:
+
+        if VOICE_NOTIFICATIONS_ENABLED:  # Check if voice notifications are enabled
+            def speak_in_thread(msg):
+                """
+                Convert the provided message to speech in a separate thread.
+
+                This function uses the pyttsx3 engine to synthesize speech from the
+                provided message. It handles any exceptions that may occur during
+                the speech synthesis process and logs the error.
+
+                :param msg: The message to be spoken aloud. It should be a string
+                            containing the text to convert to speech.
+                :return: None
+                """
+                try:
+                    engine.say(msg)
+                    engine.runAndWait()  # This should be called in the same thread
+                except Exception as e:
+                    log_error(f"Error in text-to-speech conversion: {str(e)}")
+            # Create a thread to handle speaking
+            thread = threading.Thread(target=speak_in_thread, args=(message,))
+            thread.start()
+    except Exception as err:
+        log_error(f"Error in speak function: {str(err)}")
 
 
 # It is Universal OTP Decorator used for all api's
 
 def otp_required(func):
+    """
+     Decorator to validate OTP (One-Time Password) for user authentication.
+
+     This decorator checks if the request payload contains the required 'email' and 'otp' fields, validates the OTP
+     against the stored record for the given email, and ensures that the OTP has not expired.
+
+     If the validation is successful, it proceeds to call the wrapped function. If the validation fails, it logs the
+     error and returns a relevant error message and HTTP status code.
+
+     :param func:(callable) The function to be wrapped. This function should be executed if the OTP validation is successful.
+
+     :return:(callabe) The wrapped function if OTP validation is successful,otherwise returns an error response.
+
+    """
     @wraps(func)
     def wrapper(*args, **kwargs):
+        """
+        Wrapper function to validate the OTP and execute the wrapped function.
+
+        This function processes the request to extract the required 'email' and
+        'otp' from the JSON payload, checks their validity, and allows the
+        wrapped function to be executed if the OTP validation is successful.
+
+        :param args:  (*args) Positional arguments passed to the wrapped function.
+        :param kwargs:(**kwargs) Keyword arguments passed to the wrapped function.
+
+        :return:(callable) The result of the wrapped function if OTP validation
+                  is successful, otherwise returns an error response in
+                  JSON format.
+        """
         payload = request.get_json()
         email = None
         try:
@@ -127,7 +181,22 @@ def validate_time_format(time_str):
 
 
 def validate_booking_data(data):
-    """Validates the booking data."""
+    """
+     Validate the provided booking data to ensure it meets the necessary
+     criteria for processing a booking.
+
+     This function checks if the required fields in the booking data are
+     present and valid. It may include validations for dates, times,
+     customer details, and any specific requirements for the booking.
+
+     :param data:(dict) A dictionary containing the booking information.
+                     Expected keys may include 'customer_name', 'date',
+                     'time', 'number_of_guests', etc
+     :return: bool: True if the booking data is valid, otherwise False.
+             dict: A dictionary containing error messages for invalid fields,
+                   if any. An empty dictionary indicates that there are
+                   no validation errors.
+     """
     required_fields = ['user_id', 'train_id', 'seats_booked', 'travel_date', 'source', 'destination']
     try:
         for field in required_fields:
