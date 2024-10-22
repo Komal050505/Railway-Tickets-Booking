@@ -1,17 +1,17 @@
 # Standard Library Imports
+import random
+import threading
 import time
 from datetime import datetime
-from random import random
 from urllib import request
-import threading
 
+import psutil
+import pytz
+import requests
 # Third-Party Library Imports
 from flask import Flask, jsonify, request, session
-import pytz
 from sqlalchemy import func
 from sqlalchemy.exc import SQLAlchemyError
-import requests
-import psutil
 
 # Project-Specific Imports
 from App.email_configurations import RECEIVER_EMAIL, ADMIN_EMAIL
@@ -21,11 +21,11 @@ from App.email_operations import (
     construct_train_email_body, prepare_and_send_email,
     generate_route_email_body, generate_fetch_email_body, notify_deletion,
     handle_error, generate_booking_email_body, send_error_email,
-    generate_booking_list_email_body, generate_update_booking_email_body
+    generate_booking_list_email_body, generate_update_booking_email_body, notify_booking_deletion
 )
 from Db_connections.configurations import session
 from Logging_package.logging_utility import log_info, log_debug, log_warning, log_error
-from Models.tables import Booking, Train, Railway_User, OTPStore, TrainRoute
+from Models.tables import Booking, Train, Railway_User, OTPStore, TrainRoute, Passenger
 from Utils.reusables import (
     speak, otp_required, generate_train_search_results,
     validate_time_format, validate_booking_data
@@ -142,7 +142,7 @@ def generate_otp():
         otp = str(random.randint(100000, 999999))  # Generate a 6-digit OTP
         timestamp = datetime.now()
 
-        new_otp = OTPStore(email=email, otp=str(otp), timestamp=timestamp)
+        new_otp = OTPStore(email=email, otp=otp, timestamp=timestamp)
         session.add(new_otp)
         session.commit()
 
@@ -1335,11 +1335,11 @@ def delete_train_route():
     try:
         train_number = request.args.get('train_number')
         station_name = request.args.get('station_name')
-        user_email = request.args.get('email')
+        otp_email = request.args.get('email')
         otp = request.args.get('otp')
 
         log_info(
-            f"Received parameters: train_number={train_number}, station_name={station_name}, email={user_email}, otp={otp}")
+            f"Received parameters: train_number={train_number}, station_name={station_name}, email={otp_email}, otp={otp}")
 
         if not (train_number or station_name):
             log_error("Missing required query parameters: at least train_number or station_name must be provided")
@@ -1428,13 +1428,16 @@ def book_ticket():
 
     Request Payload (JSON):
         user_id (str): The ID of the user booking the ticket.
+        traveler_name (str): Name of the traveler (can be the same as user).
         train_id (str): The ID of the train to be booked.
+        train_number (str): The unique train number associated with this booking.
+        train_name (str): The name of the train associated with this booking.
         seats_booked (int): The number of seats to be booked.
         seat_preference (str, optional): The user's seat preference, default is "No preference".
         travel_date (str): The travel date in 'YYYY-MM-DD' format.
         source (str): The source station of the journey.
         destination (str): The destination station of the journey.
-
+        passengers (list): A list of passenger details.
     """
     log_info("Received request to /book-ticket endpoint.")
     try:
@@ -1476,10 +1479,39 @@ def book_ticket():
             destination=destination
         )
 
+        # Add the new booking to the session
         session.add(new_booking)
-        session.commit()
+        session.commit()  # Commit the booking first to get booking_id for passengers
 
-        log_info(f"Booking {new_booking.booking_id} created successfully.")
+        # Add passengers to the database
+        passengers_data = data.get('passengers', [])
+        for passenger_data in passengers_data:
+            passenger = Passenger(
+                booking_id=new_booking.booking_id,  # Linking passenger to the booking
+                name=passenger_data['name'],
+                gender=passenger_data['gender'],
+                age=passenger_data['age'],
+                is_minor=passenger_data['is_minor'],
+                is_physically_challenged=passenger_data['is_physically_challenged'],
+                is_military=passenger_data['is_military'],
+                aadhar_number=passenger_data.get('aadhar_number')
+            )
+            session.add(passenger)
+
+        session.commit()  # Commit the passengers
+
+        log_info(f"Booking {new_booking.booking_id} created successfully with {len(passengers_data)} passengers.")
+
+        # Prepare passengers data for email and response
+        passenger_details = [{
+            'name': passenger_data['name'],
+            'gender': passenger_data['gender'],
+            'age': passenger_data['age'],
+            'is_minor': passenger_data['is_minor'],
+            'is_physically_challenged': passenger_data['is_physically_challenged'],
+            'is_military': passenger_data['is_military'],
+            'aadhar_number': passenger_data.get('aadhar_number')
+        } for passenger_data in passengers_data]
 
         generate_booking_email_body(
             booking_id=new_booking.booking_id,
@@ -1493,12 +1525,20 @@ def book_ticket():
             source=source,
             destination=destination,
             creation_time=booking_date.strftime('%Y-%m-%d %H:%M:%S'),
-
+            passengers=passenger_details  # Include passengers in email
         )
+
         threading.Thread(target=speak,
                          args=(f"Booking {new_booking.booking_id} successfully created for user {user_id}.",)).start()
 
-        return jsonify({"success": "Booking created successfully", "booking": new_booking.to_dict()}), 201
+        # Prepare response data
+        response_data = {
+            "success": "Booking created successfully",
+            "booking": new_booking.to_dict(),
+            "passengers": passenger_details  # Include passengers in the response
+        }
+
+        return jsonify(response_data), 201
 
     except SQLAlchemyError as e:
         session.rollback()
@@ -1529,10 +1569,9 @@ def get_bookings():
     Fetch booking details with optional search filters and pagination.
 
     This endpoint allows you to search for bookings based on various filters such as user_id, traveler_name,
-    train_name, travel_date, source, and destination. It also supports pagination using the 'limit' and 'offset'
-    query parameters. Results are case-insensitive.
+    train_name, travel_date, source, destination, passenger details, is_minor, is_military, is_physically_challenged,
+    age, and gender. It also supports pagination using 'limit' and 'offset' query parameters. Results are case-insensitive.
     :return: Returns a JSON response containing booking details, the total number of results, and pagination info.
-
     """
     log_info("Received request to /get-bookings endpoint.")
     try:
@@ -1546,8 +1585,17 @@ def get_bookings():
         travel_date = request.args.get('travel_date')
         source = request.args.get('source')
         destination = request.args.get('destination')
-        limit = int(request.args.get('limit', 10))  # Default limit for pagination
-        offset = int(request.args.get('offset', 0))  # Default offset for pagination
+
+        passenger_name = request.args.get('passenger_name')
+        passenger_aadhar = request.args.get('aadhar_number')
+        is_minor = request.args.get('is_minor')
+        is_military = request.args.get('is_military')
+        is_physically_challenged = request.args.get('is_physically_challenged')
+        age = request.args.get('age')
+        gender = request.args.get('gender')
+
+        limit = int(request.args.get('limit', 10))
+        offset = int(request.args.get('offset', 0))
 
         query = session.query(Booking)
 
@@ -1572,15 +1620,42 @@ def get_bookings():
         if destination:
             query = query.filter(Booking.destination.ilike(f'%{destination}%'))
 
+        if any([passenger_name, passenger_aadhar, is_minor, is_military, is_physically_challenged, age, gender]):
+            query = query.join(Passenger, Passenger.booking_id == Booking.booking_id)
+
+            if passenger_name:
+                query = query.filter(Passenger.name.ilike(f'%{passenger_name}%'))
+            if passenger_aadhar:
+                query = query.filter(Passenger.aadhar_number == passenger_aadhar)
+            if is_minor is not None:
+                query = query.filter(Passenger.is_minor == (is_minor.lower() == 'true'))
+            if is_military is not None:
+                query = query.filter(Passenger.is_military == (is_military.lower() == 'true'))
+            if is_physically_challenged is not None:
+                query = query.filter(Passenger.is_physically_challenged == (is_physically_challenged.lower() == 'true'))
+            if age:
+                query = query.filter(Passenger.age == int(age))
+            if gender:
+                query = query.filter(Passenger.gender.ilike(f'%{gender}%'))
+
         total_count = query.count()
         log_info(f"Total booking count: {total_count}")
 
         bookings = query.offset(offset).limit(limit).all()
 
-        booking_list = [booking.to_dict() for booking in bookings]
-        log_info(f"Fetched {len(booking_list)} bookings successfully")
-        email_body = generate_booking_list_email_body(booking_list, total_count)
+        booking_list = []
+        for booking in bookings:
+            booking_dict = booking.to_dict()
 
+            passengers = session.query(Passenger).filter(Passenger.booking_id == booking.booking_id).all()
+            passenger_list = [passenger.to_dict() for passenger in passengers]
+
+            booking_dict['passengers'] = passenger_list
+            booking_list.append(booking_dict)
+
+        log_info(f"Fetched {len(booking_list)} bookings successfully")
+
+        email_body = generate_booking_list_email_body(booking_list, total_count)
         subject = "Bookings Fetch Success"
         send_email(ADMIN_EMAIL, subject, email_body)
 
@@ -1594,9 +1669,9 @@ def get_bookings():
         }), 200
 
     except Exception as e:
+        session.rollback()
         log_error(f"Error occurred while fetching bookings: {str(e)}")
         send_error_email("Bookings Fetch Failure", str(e))
-
         threading.Thread(target=speak, args=("Failed to fetch bookings.",)).start()
 
         return jsonify({'error': 'Error fetching bookings', 'message': str(e)}), 500
@@ -1606,11 +1681,26 @@ def get_bookings():
 @otp_required
 def update_bookings():
     """
-    Update booking details for a specific booking ID provided in the JSON body.
+
+    Updates booking information and passenger details for a specified booking ID.
+
+    Expects JSON data containing:
+    booking_id (required)
+    traveler_name (optional)
+    seats_booked (optional)
+    seat_preference (optional)
+    booking_date (optional)
+    travel_date (optional)
+    source (optional)
+    destination (optional)
+    passengers (optional, list of passenger updates)
+
+    :return:Returns a success message with updated booking details or an error message.
     """
     log_info("Received request to update booking.")
     try:
         data = request.get_json()
+
         if not data:
             return jsonify({'error': 'No data provided'}), 400
 
@@ -1622,58 +1712,188 @@ def update_bookings():
         if not booking:
             return jsonify({'error': 'Booking not found'}), 404
 
-        username = booking.traveler_name
-        train_number = booking.train_id
-        train_name = booking.train_name
-        seats_booked = booking.seats_booked
-        seat_preference = booking.seat_preference
-        booking_date = booking.booking_date
-        travel_date = booking.travel_date
-        source = booking.source
-        destination = booking.destination
+        for key in ['traveler_name', 'seats_booked', 'seat_preference', 'booking_date', 'travel_date', 'source',
+                    'destination']:
+            if key in data:
+                setattr(booking, key, data[key])
 
-        if 'traveler_name' in data:
-            booking.traveler_name = data['traveler_name']
-        if 'seats_booked' in data:
-            booking.seats_booked = data['seats_booked']
-        if 'seat_preference' in data:
-            booking.seat_preference = data['seat_preference']
-        if 'booking_date' in data:
-            booking.booking_date = data['booking_date']
-        if 'travel_date' in data:
-            booking.travel_date = data['travel_date']
-        if 'source' in data:
-            booking.source = data['source']
-        if 'destination' in data:
-            booking.destination = data['destination']
+        if 'passengers' in data:
+            passenger_updates = data['passengers']
+            for passenger_data in passenger_updates:
+                passenger_id = passenger_data.get('passenger_id')
+                if not passenger_id:
+                    log_info("Skipping passenger update: Passenger ID not provided.")
+                    continue  # Skip if passenger_id is not provided
+
+                passenger = session.query(Passenger).filter(Passenger.passenger_id == passenger_id).first()
+
+                if passenger:
+                    updated_fields = False
+                    for key in ['name', 'aadhar_number', 'age', 'gender', 'is_minor', 'is_military',
+                                'is_physically_challenged']:
+                        if key in passenger_data:
+                            setattr(passenger, key, passenger_data[key])
+                            updated_fields = True
+                    if updated_fields:
+                        log_info(f"Updated passenger: {passenger_id} with data: {passenger_data}.")
+                else:
+                    # Create new passenger if not found
+                    new_passenger = Passenger(
+                        passenger_id=passenger_id,  # Ensure unique passenger ID
+                        booking_id=booking_id,  # Link to booking
+                        **{key: passenger_data[key] for key in
+                           ['name', 'aadhar_number', 'age', 'gender', 'is_minor', 'is_military',
+                            'is_physically_challenged'] if key in passenger_data}
+                    )
+                    session.add(new_passenger)
+                    log_info(f"Added new passenger: {passenger_data} for booking ID {booking_id}.")
 
         utc_time = datetime.utcnow()
         ist_timezone = pytz.timezone('Asia/Kolkata')
         updated_time = utc_time.replace(tzinfo=pytz.utc).astimezone(ist_timezone)
         booking.updated_time = updated_time
         formatted_updated_time = updated_time.strftime('%Y-%m-%d %I:%M:%S %p')
-        session.commit()
+
+        try:
+            session.commit()
+        except Exception as commit_error:
+            log_error(f"Error during session commit: {str(commit_error)}")
+            session.rollback()
+            return jsonify({'error': 'Failed to commit changes to the database', 'message': str(commit_error)}), 500
 
         updated_booking = booking.to_dict()
-        log_info(f"Booking with ID {booking_id} updated successfully.")
 
-        generate_update_booking_email_body(booking_id, username, train_number, train_name, seats_booked,
-                                           seat_preference, booking_date, travel_date, source, destination,
-                                           formatted_updated_time)
+        updated_passengers = session.query(Passenger).filter(Passenger.booking_id == booking_id).all()
+        updated_passenger_list = [passenger.to_dict() for passenger in updated_passengers]
+        updated_booking['passengers'] = updated_passenger_list
+        log_info(f"Booking with ID {booking_id} and its passengers updated successfully.")
+
+        generate_update_booking_email_body(
+            booking_id,
+            booking.traveler_name,
+            booking.train_id,
+            booking.train_name,
+            booking.seats_booked,
+            booking.seat_preference,
+            booking.booking_date,
+            booking.travel_date,
+            booking.source,
+            booking.destination,
+            formatted_updated_time,
+            updated_passenger_list
+        )
 
         threading.Thread(target=speak, args=(f"Booking ID {booking_id} updated successfully.",)).start()
 
-        return jsonify({'message': 'Booking updated successfully',
-                        'booking': updated_booking,
-                        'updated_time': formatted_updated_time}), 200
+        return jsonify({
+            'message': 'Booking and passengers updated successfully',
+            'booking': updated_booking,
+            'updated_time': formatted_updated_time,
+            'passengers': updated_passenger_list
+        }), 200
 
     except Exception as e:
+        session.rollback()
         log_error(f"Error occurred while updating booking: {str(e)}")
         send_error_email("Booking Update Failure", str(e))
 
         threading.Thread(target=speak, args=("Failed to update booking.",)).start()
 
         return jsonify({'error': 'Error updating booking', 'message': str(e)}), 500
+
+
+@app.route('/delete-booking', methods=['DELETE'])
+@otp_required
+def delete_booking():
+    """
+    Delete a booking based on provided query parameters (e.g., email associated with OTP verification,
+    email associated with booking, booking_id, and OTP).
+
+    Sends an email notification upon successful deletion of the booking,
+    including the timestamp of the deletion.
+
+    Query Parameters:
+    otp_email: The email used for OTP verification.
+    email: The email associated with the booking (for deletion).
+    booking_id: The unique identifier of the booking.
+    otp: The one-time password for verification (used in the OTP decorator).
+
+    Returns:
+    - JSON response with a message and status code.
+    """
+    log_info("Delete booking process started.")
+
+    email_time = datetime.now()
+    deletion_time = datetime.now()
+    formatted_deletion_time = None
+    booking_id = None
+    otp_email = None
+    try:
+        otp_email = request.args.get('email')
+        otp = request.args.get('otp')
+        booking_id = request.args.get('booking_id')
+
+        log_info(f"Received parameters: otp_email={otp_email}, otp={otp}, booking_id={booking_id}")
+
+        if not booking_id:
+            log_error("Missing required query parameter: booking_id is required")
+            return jsonify({"error": "booking_id is required"}), 400
+
+        # Check if the booking exists
+        booking_record = session.query(Booking).filter_by(booking_id=booking_id).first()
+        if not booking_record:
+            log_error(f"Booking not found for booking_id: {booking_id}")
+            return jsonify({"error": "Booking not found"}), 404
+
+        formatted_deletion_time = deletion_time.strftime("%Y-%m-%d %H:%M:%S")
+
+        # Delete the booking record
+        session.delete(booking_record)
+        session.commit()
+
+        log_info(f"Successfully deleted booking with ID: {booking_id}")
+
+        # Notify about the deletion
+        notify_booking_deletion(otp_email, booking_id, deletion_status="success", email_time=email_time,
+                                formatted_deletion_time=formatted_deletion_time)
+
+        threading.Thread(target=speak,
+                         args=(f"Booking with ID {booking_id} has been deleted.",)).start()
+
+        return jsonify({
+            "message": "Booking deleted successfully",
+            "booking": {
+                "booking_id": booking_id,
+                "train_number": booking_record.train_number,
+                "source": booking_record.source,
+                "destination": booking_record.destination,
+                "deleted_at": formatted_deletion_time,
+            }
+        }), 200
+
+    except SQLAlchemyError as e:
+        session.rollback()
+        log_error(f"Database error: {str(e)}")
+
+        notify_booking_deletion(otp_email, booking_id, deletion_status="error", email_time=email_time,
+                                formatted_deletion_time=formatted_deletion_time)
+
+        threading.Thread(target=speak, args=("Error occurred while deleting the booking.",)).start()
+        return jsonify({"error": "Database error occurred"}), 500
+
+    except Exception as e:
+        session.rollback()
+        log_error(f"Exception occurred: {str(e)}")
+
+        notify_booking_deletion(otp_email, booking_id, deletion_status="error", email_time=email_time,
+                                formatted_deletion_time=formatted_deletion_time)
+
+        threading.Thread(target=speak, args=("Unexpected error occurred while deleting the booking.",)).start()
+        return jsonify({"error": "An unexpected error occurred"}), 500
+
+    finally:
+        session.close()
+        log_info("Delete booking process ended.")
 
 
 if __name__ == "__main__":

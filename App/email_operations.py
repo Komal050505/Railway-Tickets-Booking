@@ -453,7 +453,7 @@ def notify_deletion(train_number, station_name, deletion_status, email_time, for
 
 
 def generate_booking_email_body(booking_id, username, train_number, train_name, seats_booked, seat_preference,
-                                booking_date, travel_date, source, destination, creation_time):
+                                booking_date, travel_date, source, destination, creation_time, passengers):
     """
     Generates the email body for the booking confirmation notification.
 
@@ -468,10 +468,20 @@ def generate_booking_email_body(booking_id, username, train_number, train_name, 
     :param source: The departure station.
     :param destination: The arrival station.
     :param creation_time: The timestamp when the booking was created.
+    :param passengers: A list of passenger details.
     :return: A formatted email body with booking details.
     """
 
     try:
+        # Create a formatted string for passengers
+        passenger_details = "\n".join([
+            f"- Name: {p['name']}, Gender: {p['gender']}, Age: {p['age']}, "
+            f"Minor: {'Yes' if p['is_minor'] else 'No'}, "
+            f"Physically Challenged: {'Yes' if p['is_physically_challenged'] else 'No'}, "
+            f"Military: {'Yes' if p['is_military'] else 'No'}"
+            for p in passengers
+        ])
+
         email_body = (
             f"Dear {username},\n\n"
             f"Your booking has been successfully created:\n"
@@ -487,6 +497,7 @@ def generate_booking_email_body(booking_id, username, train_number, train_name, 
             f"Source: {source}\n"
             f"Destination: {destination}\n"
             f"Created at: {creation_time} (IST)\n"
+            f"Passengers:\n{passenger_details}\n"  # Added passenger details
             f"-----------------------------------\n"
             f"Thank you for choosing our services.\n"
             f"Best Regards,\n"
@@ -538,7 +549,7 @@ def generate_booking_list_email_body(bookings, total_count):
 
     :param bookings: List of booking dictionaries.
     :param total_count: Total number of bookings found.
-    :return: A formatted email body with booking details.
+    :return: A formatted email body with booking and passenger details.
     """
     try:
         email_body = (
@@ -563,6 +574,26 @@ def generate_booking_list_email_body(bookings, total_count):
                 f"Travel Date: {travel_date}, "
                 f"Seats Booked: {seats_booked}\n"
             )
+
+            # Include passenger details
+            passengers = booking.get('passengers', [])
+            for passenger in passengers:
+                passenger_name = passenger.get('name', 'N/A')
+                passenger_gender = passenger.get('gender', 'N/A')
+                passenger_age = passenger.get('age', 'N/A')
+                is_minor = "Yes" if passenger.get('is_minor', False) else "No"
+                is_challenged = "Yes" if passenger.get('is_physically_challenged', False) else "No"
+                is_military = "Yes" if passenger.get('is_military', False) else "No"
+                aadhar_number = passenger.get('aadhar_number', 'N/A')
+
+                email_body += (
+                    f"    Passenger: {passenger_name}, "
+                    f"Gender: {passenger_gender}, Age: {passenger_age}, "
+                    f"Minor: {is_minor}, "
+                    f"Physically Challenged: {is_challenged}, "
+                    f"Military: {is_military}, "
+                    f"Aadhar Number: {aadhar_number}\n"
+                )
 
         email_body += (
             f"-----------------------------------\n"
@@ -603,53 +634,123 @@ def send_error_email(subject, error_message):
         log_error(f"Failed to send error email: {str(e)}")
 
 
-def generate_update_booking_email_body(booking_id, username, train_number, train_name, seats_booked, seat_preference,
-                                       booking_date, travel_date, source, destination, formatted_updated_time):
+def generate_update_booking_email_body(booking_id, user_name, train_id, train_name, seats_booked, seat_preference,
+                                       booking_date, travel_date, source_station, destination_station,
+                                       formatted_updated_time, passenger_list=None, updated_passenger_ids=None):
     """
-    Generates the email body for the booking update notification.
+    Generates the email body for the booking update notification, including passenger details if available.
 
     :param booking_id: Unique identifier for the booking.
-    :param username: Name of the user who made the booking.
-    :param train_number: Number of the train for which the booking was made.
+    :param user_name: Name of the user who made the booking.
+    :param train_id: Id of the train for which the booking was made.
     :param train_name: Name of the train for which the booking was made.
     :param seats_booked: Number of seats booked by the user.
     :param seat_preference: Seat preference selected by the user (if any).
     :param booking_date: The date when the booking was created.
     :param travel_date: The date of the scheduled travel.
-    :param source: The departure station.
-    :param destination: The arrival station.
+    :param source_station: The departure station.
+    :param destination_station: The arrival station.
     :param formatted_updated_time: The timestamp when the booking was last updated.
+    :param passenger_list: List of passengers with their details (optional).
+    :param updated_passenger_ids: List of updated passenger IDs (optional).
     :return: A formatted email body with booking update details.
     """
     try:
         email_body = (
-            f"Dear {username},\n\n"
+            f"Dear {user_name},\n\n"
             f"Your booking has been successfully updated:\n"
             f"-----------------------------------\n"
             f"Booking ID: {booking_id}\n"
-            f"User Name: {username}\n"
-            f"Train Number: {train_number}\n"
+            f"User Name: {user_name}\n"
+            f"Train Id: {train_id}\n"
             f"Train Name: {train_name}\n"
             f"Seats Booked: {seats_booked}\n"
             f"Seat Preference: {seat_preference}\n"
             f"Booking Date: {booking_date}\n"
             f"Travel Date: {travel_date}\n"
-            f"Source: {source}\n"
-            f"Destination: {destination}\n"
+            f"Source: {source_station}\n"
+            f"Destination: {destination_station}\n"
             f"Updated at: {formatted_updated_time} (IST)\n"
             f"-----------------------------------\n"
+        )
+
+        # Add updated passenger IDs if available
+        if updated_passenger_ids:
+            email_body += "Updated Passenger IDs:\n"
+            email_body += ", ".join(str(pid) for pid in updated_passenger_ids) + "\n"  # Convert IDs to a string
+            email_body += "-----------------------------------\n"
+
+        # Add passenger details if available
+        if passenger_list:
+            email_body += "Passenger Details:\n"
+            for passenger in passenger_list:
+                email_body += (
+                    f"- Passenger ID: {passenger.get('passenger_id', 'N/A')}\n"
+                    f"  Name: {passenger.get('name', 'N/A')}\n"
+                    f"  Aadhar Number: {passenger.get('aadhar_number', 'N/A')}\n"
+                    f"  Age: {passenger.get('age', 'N/A')}\n"
+                    f"  Gender: {passenger.get('gender', 'N/A')}\n"
+                    f"  Minor: {'Yes' if passenger.get('is_minor', False) else 'No'}\n"
+                    f"  Military: {'Yes' if passenger.get('is_military', False) else 'No'}\n"
+                    f"  Physically Challenged: {'Yes' if passenger.get('is_physically_challenged', False) else 'No'}\n"
+                    f"-----------------------------------\n"
+                )
+
+        email_body += (
             f"Thank you for choosing our services.\n"
             f"Best Regards,\n"
             f"Railway Booking System"
         )
 
         subject = f"Booking Update Confirmation {booking_id}"
+
+        # Send email and log the action
         send_email(
             subject=subject,
             body=email_body,
             to_email=ADMIN_EMAIL
         )
+        log_info(f"Booking update email sent to {ADMIN_EMAIL} for Booking ID {booking_id}.")
 
     except Exception as e:
         log_error(f"Error generating booking update email body: {str(e)}")
+        raise
+
+
+def notify_booking_deletion(email, booking_id, deletion_status, email_time, formatted_deletion_time):
+    """
+    Generate the email body for the deletion of a booking and send the notification.
+
+    :param email: (str) The email of the user whose booking is deleted.
+    :param booking_id: (str) The ID of the booking that was deleted.
+    :param deletion_status: (str) The status of the deletion ("success" or "error").
+    :param email_time: (datetime) The time when the email notification is sent.
+    :param formatted_deletion_time: (str) The time when the deletion occurred, formatted as a string.
+    :return: None
+    """
+    try:
+        formatted_email_time = email_time.strftime("%Y-%m-%d %H:%M:%S")
+        email_body = (
+            f"Dear User,\n\n"
+            f"Your booking deletion details:\n"
+            f"-----------------------------------\n"
+            f"Booking ID: {booking_id}\n"
+            f"Deleted at: {formatted_deletion_time} (IST)\n"
+            f"Notification Sent at: {formatted_email_time} (IST)\n"
+            f"Status: {'Deletion Successful' if deletion_status == 'success' else 'Deletion Failed'}\n"
+            f"-----------------------------------\n"
+            f"Best Regards,\n"
+            f"Booking Management System"
+        )
+
+        subject = f"Booking Deletion Status: {deletion_status.capitalize()}"
+
+        send_email(
+            to_email=email,
+            subject=subject,
+            body=email_body
+        )
+
+    except Exception as err:
+        log_error(f"Error generating notify deletion email body: {str(err)}")
         raise

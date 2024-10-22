@@ -4,7 +4,16 @@
     <option name="autoReloadType" value="SELECTIVE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="2803ff16-b66e-4ea2-b027-6ca7b9432b6f" name="Changes" comment="" />
+    <list default="true" id="2803ff16-b66e-4ea2-b027-6ca7b9432b6f" name="Changes" comment="">
+      <change afterPath="$PROJECT_DIR$/project_requirements/__init__.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/project_requirements/requirements.txt" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/App/app.py" beforeDir="false" afterPath="$PROJECT_DIR$/App/app.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/App/email_configurations.py" beforeDir="false" afterPath="$PROJECT_DIR$/App/email_configurations.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/App/email_operations.py" beforeDir="false" afterPath="$PROJECT_DIR$/App/email_operations.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/App/main.log" beforeDir="false" afterPath="$PROJECT_DIR$/App/main.log" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/Db_connections/configurations.py" beforeDir="false" afterPath="$PROJECT_DIR$/Db_connections/configurations.py" afterDir="false" />
+    </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
     <option name="HIGHLIGHT_NON_ACTIVE_CHANGELIST" value="false" />
@@ -33,10 +42,16 @@
   &quot;keyToString&quot;: {
     &quot;Python.app.executor&quot;: &quot;Run&quot;,
     &quot;Python.logging_utility.executor&quot;: &quot;Run&quot;,
+    &quot;Python.reusables.executor&quot;: &quot;Run&quot;,
     &quot;Python.tables.executor&quot;: &quot;Run&quot;,
     &quot;RunOnceActivity.ShowReadmeOnStart&quot;: &quot;true&quot;
   }
 }</component>
+  <component name="RecentsManager">
+    <key name="MoveFile.RECENT_KEYS">
+      <recent name="C:\Users\lenovo\PycharmProjects\railway_tickets_booking\project_requirements" />
+    </key>
+  </component>
   <component name="SharedIndexes">
     <attachedChunks>
       <set>
